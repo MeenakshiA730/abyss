@@ -43,3 +43,16 @@
 ## URLs for testing
 - `?camstep=3` — `http://localhost:5173/?camstep=3` (fixed persistent lookAt)
 - Plain — `http://localhost:5173/` (default mode, now uses persistent lookAt + roll)
+
+---
+
+## 2026-10-22: Restoration step 1 — Standard Three.js fog
+
+### Action
+Uncommented standard `<fog attach="fog" args={[interpolatedFog.color, interpolatedFog.near, interpolatedFog.far]} />` in ZoneLighting.tsx (line 251).
+
+### Commit
+`d81e29b` — "restore: standard fog"
+
+### Test
+Open plain URL and verify no blinking returns. Report result.

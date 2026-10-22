@@ -1,67 +1,57 @@
 /**
  * ABYSS — Debug Overlay (Development Only)
- * Shows FPS, frame time, WebGL renderer info, and React render counts
- * Only renders when ?debug=true query param is present
+ * Split into:
+ *  - DebugStatsCollector: lives INSIDE <Canvas>, uses useFrame/useThree, writes stats to module ref
+ *  - DebugStatsDisplay: lives OUTSIDE <Canvas>, reads stats on ~4 Hz interval
+ *  - useDebugFlag: checks ?debug query param
  */
 
 import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useRef, useState, useMemo } from 'react';
 
-interface DebugOverlayProps {
-  enabled: boolean;
-}
+// Module-level stats store (updated by collector, read by display)
+const debugStats = {
+  fps: 0,
+  frameTime: 0,
+  calls: 0,
+  triangles: 0,
+  geometries: 0,
+  textures: 0,
+  programs: 0,
+  sceneChildren: 0,
+  cameraPos: { x: 0, y: 0, z: 0 },
+  canvasMountCount: 0,
+  renderCount: 0,
+  lastUpdate: 0,
+};
 
-export function DebugOverlay({ enabled }: DebugOverlayProps) {
+// DebugStatsCollector - MUST be inside <Canvas>
+export function DebugStatsCollector({ enabled }: { enabled: boolean }) {
   const { gl, scene, camera } = useThree();
-  const [stats, setStats] = useState({
-    fps: 0,
-    frameTime: 0,
-    calls: 0,
-    triangles: 0,
-    geometries: 0,
-    textures: 0,
-    programs: 0,
-  });
-
   const frameCountRef = useRef(0);
   const lastTimeRef = useRef(performance.now());
   const renderCountRef = useRef(0);
-  const canvasMountRef = useRef(0);
-  const isMountedRef = useRef(false);
+  const mountLoggedRef = useRef(false);
 
-  // Track canvas mount/unmount at component level (not in effect with changing deps)
-  if (!isMountedRef.current) {
-    isMountedRef.current = true;
-    canvasMountRef.current += 1;
-    console.log(`[ABYSS-DEBUG] Canvas MOUNTED (mount #${canvasMountRef.current})`);
+  // Log mount once
+  if (!mountLoggedRef.current) {
+    mountLoggedRef.current = true;
+    debugStats.canvasMountCount += 1;
+    console.log(`[ABYSS-DEBUG] Canvas MOUNTED (mount #${debugStats.canvasMountCount})`);
   }
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (isMountedRef.current) {
-        console.log(`[ABYSS-DEBUG] Canvas UNMOUNTED (was mount #${canvasMountRef.current})`);
-        isMountedRef.current = false;
-      }
-    };
-  }, []);
 
   // WebGL context loss/restore listeners
   useEffect(() => {
     const canvas = gl.domElement;
-
     const handleContextLost = (e: Event) => {
       e.preventDefault();
       console.error('[ABYSS-DEBUG] webglcontextlost fired!');
     };
-
     const handleContextRestored = () => {
       console.log('[ABYSS-DEBUG] webglcontextrestored fired!');
     };
-
     canvas.addEventListener('webglcontextlost', handleContextLost);
     canvas.addEventListener('webglcontextrestored', handleContextRestored);
-
     return () => {
       canvas.removeEventListener('webglcontextlost', handleContextLost);
       canvas.removeEventListener('webglcontextrestored', handleContextRestored);
@@ -74,9 +64,10 @@ export function DebugOverlay({ enabled }: DebugOverlayProps) {
 
     const now = performance.now();
     frameCountRef.current++;
+    renderCountRef.current++;
 
-    // Update stats every 500ms
-    if (now - lastTimeRef.current >= 500) {
+    // Update stats every 250ms (~4 Hz)
+    if (now - lastTimeRef.current >= 250) {
       const elapsed = now - lastTimeRef.current;
       const fps = Math.round((frameCountRef.current / elapsed) * 1000);
       const frameTime = elapsed / frameCountRef.current;
@@ -84,25 +75,65 @@ export function DebugOverlay({ enabled }: DebugOverlayProps) {
       const info = gl.info.render;
       const memory = gl.info.memory;
 
-      setStats({
-        fps,
-        frameTime: Math.round(frameTime * 100) / 100,
-        calls: info.calls,
-        triangles: info.triangles,
-        geometries: memory.geometries,
-        textures: memory.textures,
-        programs: gl.info.programs?.length || 0,
-      });
+      debugStats.fps = fps;
+      debugStats.frameTime = Math.round(frameTime * 100) / 100;
+      debugStats.calls = info.calls;
+      debugStats.triangles = info.triangles;
+      debugStats.geometries = memory.geometries;
+      debugStats.textures = memory.textures;
+      debugStats.programs = gl.info.programs?.length || 0;
+      debugStats.sceneChildren = scene?.children?.length || 0;
+      debugStats.cameraPos = camera ? {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      } : { x: 0, y: 0, z: 0 };
+      debugStats.renderCount = renderCountRef.current;
+      debugStats.lastUpdate = now;
 
       frameCountRef.current = 0;
       lastTimeRef.current = now;
     }
-
-    // Count React renders of this component
-    renderCountRef.current++;
   });
 
-  if (!enabled) return null;
+  return null; // renders nothing inside Canvas
+}
+
+// DebugStatsDisplay - MUST be OUTSIDE <Canvas>
+export function DebugStatsDisplay({ enabled }: { enabled: boolean }) {
+  const [stats, setStats] = useState({
+    fps: 0,
+    frameTime: 0,
+    calls: 0,
+    triangles: 0,
+    geometries: 0,
+    textures: 0,
+    programs: 0,
+    sceneChildren: 0,
+    cameraPos: { x: 0, y: 0, z: 0 },
+    canvasMountCount: 0,
+    renderCount: 0,
+  });
+
+  useEffect(() => {
+    if (!enabled) return;
+    const id = setInterval(() => {
+      setStats({
+        fps: debugStats.fps,
+        frameTime: debugStats.frameTime,
+        calls: debugStats.calls,
+        triangles: debugStats.triangles,
+        geometries: debugStats.geometries,
+        textures: debugStats.textures,
+        programs: debugStats.programs,
+        sceneChildren: debugStats.sceneChildren,
+        cameraPos: debugStats.cameraPos,
+        canvasMountCount: debugStats.canvasMountCount,
+        renderCount: debugStats.renderCount,
+      });
+    }, 250); // ~4 Hz
+    return () => clearInterval(id);
+  }, [enabled]);
 
   const style = useMemo(() => ({
     position: 'fixed' as const,
@@ -147,10 +178,12 @@ export function DebugOverlay({ enabled }: DebugOverlayProps) {
     paddingTop: '8px',
   }), []);
 
+  if (!enabled) return null;
+
   return (
     <div style={style} aria-hidden="true">
       <div style={{ fontWeight: 700, marginBottom: '8px', color: '#00ffff' }}>
-        ABYSS DEBUG — Mount #{canvasMountRef.current} | Renders: {renderCountRef.current}
+        ABYSS DEBUG — Mount #{stats.canvasMountCount} | Renders: {stats.renderCount}
       </div>
 
       <div style={rowStyle}>
@@ -194,12 +227,14 @@ export function DebugOverlay({ enabled }: DebugOverlayProps) {
         <div style={{ fontWeight: 600, marginBottom: '4px', color: '#88ffff' }}>Scene</div>
         <div style={rowStyle}>
           <span style={labelStyle}>Scene Children:</span>
-          <span style={valueStyle}>{scene?.children?.length || 0}</span>
+          <span style={valueStyle}>{stats.sceneChildren}</span>
         </div>
         <div style={rowStyle}>
           <span style={labelStyle}>Camera:</span>
           <span style={valueStyle}>
-            {camera ? `pos: [${camera.position.x.toFixed(1)}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)}]` : 'N/A'}
+            {stats.cameraPos.x !== 0 || stats.cameraPos.y !== 0 || stats.cameraPos.z !== 0
+              ? `pos: [${stats.cameraPos.x.toFixed(1)}, ${stats.cameraPos.y.toFixed(1)}, ${stats.cameraPos.z.toFixed(1)}]`
+              : 'N/A'}
           </span>
         </div>
       </div>
@@ -218,7 +253,6 @@ export function useDebugFlag(): boolean {
     const debug = params.get('debug') === 'true' || params.get('debug') === '1';
     setEnabled(debug);
 
-    // Listen for URL changes (e.g., user adds ?debug manually)
     const handleHashChange = () => {
       const params = new URLSearchParams(window.location.search);
       setEnabled(params.get('debug') === 'true' || params.get('debug') === '1');

@@ -9,6 +9,7 @@ import { useMemo, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import type { ZoneId } from '@/config/zones';
 import { ZONE_COLORS, ZONE_VISIBILITY } from '@/config/zones';
+import { useDebugFlag } from './DebugOverlay';
 
 // Terrain render counter (dev only)
 function TerrainRenderCounter({ enabled }: { enabled: boolean }) {
@@ -32,6 +33,7 @@ interface TerrainProps {
 export function Terrain({ zone, zoneProgress: _zoneProgress, reducedMotion, isPaused = false }: TerrainProps) {
   const terrainRef = useRef<THREE.Group>(null);
   const timeRef = useRef(0);
+  const debugEnabled = useDebugFlag();
 
   // Get visibility rules and colors for current zone
   const visibility = ZONE_VISIBILITY[zone];
@@ -481,7 +483,7 @@ export function Terrain({ zone, zoneProgress: _zoneProgress, reducedMotion, isPa
   return (
     <group ref={terrainRef} position={[0, -15, 0]}>
       {/* Terrain render counter (dev only) */}
-      <TerrainRenderCounter enabled={false} />
+      <TerrainRenderCounter enabled={debugEnabled} />
       {/* Seabed */}
       <mesh
         geometry={seabedGeometry}

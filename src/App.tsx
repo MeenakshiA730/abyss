@@ -3,7 +3,7 @@
  * Deep ocean exploration experience with scroll-driven descent
  */
 
-import { useEffect, useRef, useState, useCallback, createContext, useContext } from 'react';
+import React, { useEffect, useRef, useState, useCallback, createContext, useContext } from 'react';
 import { motion, useTransform, useSpring, useMotionValue, AnimatePresence } from 'motion/react';
 import { AbyssCanvas } from './components/AbyssCanvas';
 import { useScroll, useScrollTo, ScrollProvider } from './hooks/useScrollContext';
@@ -11,12 +11,57 @@ import { useReducedMotion } from './hooks/useReducedMotion';
 import { creatures, getCreatureById, type Creature } from './data/creatures';
 import { getZoneById } from './data/zones';
 import type { ZoneId } from './components/CameraController';
+import { DebugStatsDisplay, useDebugFlag } from './components/DebugOverlay';
 import './styles/design-system.css';
 import './App.css';
 
 // ============================================
-// Pause Context for 3D Scene
+// Error Boundary
 // ============================================
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  ErrorBoundaryState
+> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ABYSS] Error Boundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          background: '#0a0a12',
+          color: '#00ffff',
+          padding: '24px',
+          fontFamily: 'monospace',
+          zIndex: 10000,
+          overflow: 'auto',
+        }}>
+          <h2 style={{ marginTop: 0 }}>Application Error</h2>
+          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            {this.state.error?.message}
+            {this.state.error?.stack && '\n\n' + this.state.error.stack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface PauseContextValue {
   isPaused: boolean;
@@ -1008,9 +1053,11 @@ function LoadingScreen({ onComplete }: { onComplete: () => void }) {
 
 export default function App() {
   return (
-    <ScrollProvider>
-      <AppInner />
-    </ScrollProvider>
+    <ErrorBoundary>
+      <ScrollProvider>
+        <AppInner />
+      </ScrollProvider>
+    </ErrorBoundary>
   );
 }
 
@@ -1080,28 +1127,35 @@ function AppInner() {
     }
   }, []);
 
+  // Debug flag for stats display
+  const debugEnabled = useDebugFlag();
+
   if (!isLoaded) {
     return <LoadingScreen onComplete={handleCanvasLoad} />;
   }
 
   return (
-    <PauseContext.Provider value={{ isPaused, reducedMotion }}>
-      {/* 3D Canvas - Full Screen */}
-      <div className="canvas-container">
-        <AbyssCanvas
-          onLoad={handleCanvasLoad}
-          onError={handleWebglError}
-          className="abyss-canvas"
-          isPaused={isPaused}
-          reducedMotion={reducedMotion}
-          depth={depth}
-          currentZone={currentZone as ZoneId}
-          zoneProgress={zoneProgress}
-        />
-        <div className="film-grain vignette" aria-hidden="true" />
-      </div>
+    <ErrorBoundary>
+      <PauseContext.Provider value={{ isPaused, reducedMotion }}>
+        {/* 3D Canvas - Full Screen */}
+        <div className="canvas-container">
+          <AbyssCanvas
+            onLoad={handleCanvasLoad}
+            onError={handleWebglError}
+            className="abyss-canvas"
+            isPaused={isPaused}
+            reducedMotion={reducedMotion}
+            depth={depth}
+            currentZone={currentZone as ZoneId}
+            zoneProgress={zoneProgress}
+          />
+          <div className="film-grain vignette" aria-hidden="true" />
+        </div>
 
-      {/* UI Overlay */}
+        {/* Debug stats display - OUTSIDE Canvas */}
+        <DebugStatsDisplay enabled={debugEnabled} />
+
+        {/* UI Overlay */}
       <div className="ui-overlay" style={{ display: uiVisible ? 'block' : 'none' }}>
         <header className="top-bar">
           <div className="top-left">
@@ -1184,5 +1238,6 @@ function AppInner() {
         </div>
       )}
     </PauseContext.Provider>
-  );
+      </ErrorBoundary>
+    );
 }

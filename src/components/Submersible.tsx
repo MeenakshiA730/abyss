@@ -9,6 +9,7 @@ import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { ZoneId } from '@/config/zones';
 import { ZONE_COLORS } from '@/config/zones';
+import { useDebugFlag } from './DebugOverlay';
 
 // Submersible render counter (dev only)
 function SubmersibleRenderCounter({ enabled }: { enabled: boolean }) {
@@ -46,6 +47,7 @@ export function Submersible({ zone, zoneProgress: _zoneProgress, reducedMotion, 
 
   // Get zone colors
   const colors = ZONE_COLORS[zone];
+  const debugEnabled = useDebugFlag();
 
   // ============ GEOMETRIES ============
 
@@ -548,7 +550,7 @@ export function Submersible({ zone, zoneProgress: _zoneProgress, reducedMotion, 
   return (
     <group ref={subRef} position={[0, 0, 0]}>
       {/* Submersible render counter (dev only) */}
-      <SubmersibleRenderCounter enabled={false} />
+      <SubmersibleRenderCounter enabled={debugEnabled} />
       {/* ============ MAIN PRESSURE HULL ============ */}
       <mesh
         ref={hullRef}

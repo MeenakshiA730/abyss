@@ -9,6 +9,7 @@ import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { ZoneId, ZoneColors } from '@/config/zones';
 import { ZONE_COLORS, ZONE_VISIBILITY } from '@/config/zones';
+import { useDebugFlag } from './DebugOverlay';
 
 // MarineLife render counter (dev only)
 function MarineLifeRenderCounter({ enabled }: { enabled: boolean }) {
@@ -1121,11 +1122,12 @@ function AbyssalCreatures({ zoneProgress: _zoneProgress, reducedMotion, isPaused
 export function MarineLife({ zone, zoneProgress, reducedMotion, isPaused = false }: MarineLifeProps) {
   const colors = ZONE_COLORS[zone];
   const visibility = ZONE_VISIBILITY[zone];
+  const debugEnabled = useDebugFlag();
 
   return (
     <group>
       {/* MarineLife render counter (dev only) */}
-      <MarineLifeRenderCounter enabled={false} />
+      <MarineLifeRenderCounter enabled={debugEnabled} />
       {/* Sunlight zone - schooling fish and jellyfish */}
       {visibility.schoolingFish && (
         <SchoolingFish zoneProgress={zoneProgress} reducedMotion={reducedMotion} isPaused={isPaused} zoneColors={colors} />

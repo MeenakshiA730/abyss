@@ -4,9 +4,9 @@
  * PHASE 1: Camera and composition fix - proper framing, scale, depth layering
  */
 
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { EffectComposer, FXAA } from '@react-three/postprocessing';
-import { Suspense, useEffect, useState, useRef } from 'react';
+import { Suspense, useEffect, useState, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import { Environment } from './Environment';
 import { Submersible } from './Submersible';
@@ -21,7 +21,8 @@ import { ROV } from './ROV';
 import { CameraController } from './CameraController';
 import { ZoneLighting } from './ZoneLighting';
 import { useReducedMotion } from '../hooks/useReducedMotion';
-import { DebugOverlay, useDebugFlag } from './DebugOverlay';
+import { DebugStatsCollector, useDebugFlag } from './DebugOverlay';
+import { getDebugFlags } from '../debugFlags';
 
 // Scene root render counter (dev only)
 function SceneRenderCounter({ enabled }: { enabled: boolean }) {
@@ -47,6 +48,32 @@ function AbyssCanvasRenderCounter({ enabled }: { enabled: boolean }) {
   return null;
 }
 
+// Debug Cube for ?cube=1 baseline testing
+function DebugCube({ frozen }: { frozen: boolean }) {
+  const cubeRef = useRef<THREE.Mesh>(null);
+  const timeRef = useRef(0);
+
+  useFrame((_, delta) => {
+    if (frozen) return;
+    timeRef.current += delta;
+    if (cubeRef.current) {
+      cubeRef.current.rotation.x = timeRef.current * 0.5;
+      cubeRef.current.rotation.y = timeRef.current * 0.3;
+    }
+  });
+
+  return (
+    <>
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[5, 10, 7]} intensity={1} />
+      <mesh ref={cubeRef}>
+        <boxGeometry args={[2, 2, 2]} />
+        <meshStandardMaterial color="#00d4ff" roughness={0.3} metalness={0.7} />
+      </mesh>
+    </>
+  );
+}
+
 type ZoneId = 'sunlight' | 'twilight' | 'midnight' | 'abyss';
 
 interface AbyssCanvasProps {
@@ -59,6 +86,21 @@ interface AbyssCanvasProps {
   currentZone?: ZoneId;
   zoneProgress?: number;
 }
+
+// Module-level constants for Canvas props (hoisted from inline objects)
+const CAMERA_DEFAULTS = { position: [12, 8, 20], fov: 55, near: 0.1, far: 5000 } as const;
+const GL_DEFAULTS = {
+  antialias: true,
+  alpha: true,
+  preserveDrawingBuffer: false,
+  powerPreference: 'high-performance',
+  stencil: false,
+  depth: true,
+  logarithmicDepthBuffer: true,
+} as const;
+
+// Debug flags (parsed once at startup)
+const debugFlags = getDebugFlags();
 
 export function AbyssCanvas({
   className = '',
@@ -82,42 +124,14 @@ export function AbyssCanvas({
     }
   }, [sceneReady, onLoad]);
 
-  // DIAGNOSTIC: Detect Canvas/AbyssCanvas mount/unmount cycles (throttled)
-  const mountCountRef = useRef(0);
-  const lastLogRef = useRef(0);
-  useEffect(() => {
-    mountCountRef.current += 1;
-    const now = performance.now();
-    if (now - lastLogRef.current > 2000) { // throttle: max once per 2s
-      console.log(`[ABYSS-DIAG] AbyssCanvas mounted (count: ${mountCountRef.current}, zone: ${currentZone}, depth: ${depth})`);
-      lastLogRef.current = now;
-    }
-    return () => {
-      const now = performance.now();
-      if (now - lastLogRef.current > 2000) {
-        console.log(`[ABYSS-DIAG] AbyssCanvas UNMOUNTED (count: ${mountCountRef.current})`);
-        lastLogRef.current = now;
-      }
-    };
-  }, [currentZone, depth]); // re-run only when zone/depth change significantly
-
   // Submersible position (hero focal point) - at origin, descends with depth
-  const submersiblePosition = new THREE.Vector3(0, -depth / 1000, 0); // Scale depth for visible descent
+  const submersiblePosition = useMemo(() => new THREE.Vector3(0, -depth / 1000, 0), [depth]);
 
   return (
     <Canvas
       className={className}
-      // Camera will be controlled by CameraController
-      camera={{ position: [12, 8, 20], fov: 55, near: 0.1, far: 5000 }}
-      gl={{
-        antialias: true,
-        alpha: true,
-        preserveDrawingBuffer: false,
-        powerPreference: 'high-performance',
-        stencil: false,
-        depth: true,
-        logarithmicDepthBuffer: true,
-      }}
+      camera={CAMERA_DEFAULTS}
+      gl={GL_DEFAULTS}
       shadows={false}
       onError={(error) => {
         const errorObj = error instanceof Error ? error : new Error(String(error));
@@ -137,120 +151,151 @@ export function AbyssCanvas({
         <SceneRenderCounter enabled={debugEnabled} />
         {/* AbyssCanvas render counter (dev only) */}
         <AbyssCanvasRenderCounter enabled={debugEnabled} />
-        {/* Zone-aware background & fog — handled by ZoneLighting */}
-        <ZoneLighting
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          _depth={depth}
-        />
 
-        {/* ============ CAMERA CONTROLLER ============ */}
-        <CameraController
-          currentZone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-          targetPosition={submersiblePosition}
-          depth={depth}
-        />
+        {/* CUBE MODE - render ONLY a single rotating cube (baseline) */}
+        {debugFlags.cube && <DebugCube frozen={debugFlags.frozen} />}
 
-        {/* ============ TERRAIN (seabed, mountains, arches) ============ */}
-        {/* Huge 2000x2000 seabed centered at origin, y=-15 */}
-        <Terrain
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+        {!debugFlags.cube && (
+          <>
+            {/* Zone-aware background & fog — handled by ZoneLighting */}
+            <ZoneLighting
+              zone={currentZone}
+              zoneProgress={zoneProgress}
+              _depth={depth}
+              nolights={debugFlags.nolights}
+            />
 
-        {/* ============ ENVIRONMENT (ocean floor, rocks, silhouettes) ============ */}
-        {/* 500x500 floor at y=-15, rocks at radius 25-80, silhouettes at radius 120-200 */}
-        <Environment
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ CAMERA CONTROLLER ============ */}
+            {!debugFlags.nocamera && (
+              <CameraController
+                currentZone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+                targetPosition={submersiblePosition}
+                depth={depth}
+              />
+            )}
 
-        {/* ============ SHIPWRECK - At natural position [-200, -12, 50] ============ */}
-        {/* Far in midground - should be visible as silhouette against fog */}
-        <Shipwreck
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ TERRAIN (seabed, mountains, arches) ============ */}
+            {/* Huge 2000x2000 seabed centered at origin, y=-15 */}
+            {!debugFlags.noterrain && (
+              <Terrain
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
 
-        {/* ============ RESEARCH STATION - At natural position [300, -15, -200] ============ */}
-        {/* Far background - distant silhouette */}
-        <ResearchStation
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ ENVIRONMENT (ocean floor, rocks, silhouettes) ============ */}
+            {/* 500x500 floor at y=-15, rocks at radius 25-80, silhouettes at radius 120-200 */}
+            {!debugFlags.noenv && (
+              <Environment
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
 
-        {/* ============ ROV - Passes near origin naturally ============ */}
-        <ROV
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ SHIPWRECK - At natural position [-200, -12, 50] ============ */}
+            {/* Far in midground - should be visible as silhouette against fog */}
+            {!debugFlags.nowreck && (
+              <Shipwreck
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
 
-        {/* ============ PARTICLES (marine snow) ============ (DISABLED for diagnostic) */}
-        {/* <Particles
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        /> */}
+            {/* ============ RESEARCH STATION - At natural position [300, -15, -200] ============ */}
+            {/* Far background - distant silhouette */}
+            {!debugFlags.nowreck && (
+              <ResearchStation
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
 
-        {/* ============ SUBMERSIBLE - Hero at origin, facing camera at 3/4 angle ============ */}
-        {/* Rotate slightly so front faces camera at default position */}
-        <group rotation={[0, -0.4, 0]}>
-          <Submersible
-            zone={currentZone}
-            zoneProgress={zoneProgress}
-            reducedMotion={reducedMotion}
-            isPaused={isPaused}
-          />
-        </group>
+            {/* ============ ROV - Passes near origin naturally ============ */}
+            {!debugFlags.nowreck && (
+              <ROV
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
 
-        {/* ============ SEARCHLIGHT ============ */}
-        <Searchlight
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ PARTICLES (marine snow) ============ (DISABLED for diagnostic) */}
+            {/* <Particles
+              zone={currentZone}
+              zoneProgress={zoneProgress}
+              reducedMotion={reducedMotion}
+              isPaused={isPaused}
+            /> */}
 
-        {/* ============ MARINE LIFE - Already positioned near origin ============ */}
-        {/* SchoolingFish at [0, -5, -10], Jellyfish at radius 15-35 */}
-        <MarineLife
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ SUBMERSIBLE - Hero at origin, facing camera at 3/4 angle ============ */}
+            {/* Rotate slightly so front faces camera at default position */}
+            {!debugFlags.nosub && (
+              <group rotation={[0, -0.4, 0]}>
+                <Submersible
+                  zone={currentZone}
+                  zoneProgress={zoneProgress}
+                  reducedMotion={reducedMotion}
+                  isPaused={isPaused}
+                />
+              </group>
+            )}
 
-        {/* ============ MASSIVE CREATURE - At natural position [0, -20, -200] ============ */}
-        {/* Far background, only visible in midnight/abyss */}
-        <MassiveCreature
-          zone={currentZone}
-          zoneProgress={zoneProgress}
-          reducedMotion={reducedMotion}
-          isPaused={isPaused}
-        />
+            {/* ============ SEARCHLIGHT ============ */}
+            {!debugFlags.nowreck && (
+              <Searchlight
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
+
+            {/* ============ MARINE LIFE - Already positioned near origin ============ */}
+            {/* SchoolingFish at [0, -5, -10], Jellyfish at radius 15-35 */}
+            {!debugFlags.nomarine && (
+              <MarineLife
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
+
+            {/* ============ MASSIVE CREATURE - At natural position [0, -20, -200] ============ */}
+            {/* Far background, only visible in midnight/abyss */}
+            {!debugFlags.nomarine && (
+              <MassiveCreature
+                zone={currentZone}
+                zoneProgress={zoneProgress}
+                reducedMotion={reducedMotion}
+                isPaused={isPaused}
+              />
+            )}
+          </>
+        )}
       </Suspense>
 
       {/* Post-processing - minimal FXAA only for Phase 1 */}
-      <EffectComposer multisampling={0} enableNormalPass={false}>
-        <FXAA />
-      </EffectComposer>
+      {!debugFlags.nopost && !debugFlags.cube && (
+        <EffectComposer multisampling={0} enableNormalPass={false}>
+          <FXAA />
+        </EffectComposer>
+      )}
 
       {/* Debug Overlay - only renders when ?debug=true */}
-      <DebugOverlay enabled={debugEnabled} />
+      <DebugStatsCollector enabled={debugEnabled} />
     </Canvas>
   );
 }

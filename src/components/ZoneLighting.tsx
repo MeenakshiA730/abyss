@@ -247,8 +247,8 @@ export function ZoneLighting({ zone, zoneProgress, nolights = false }: ZoneLight
       {/* Background */}
       <color attach="background" args={[bgColor]} />
 
-      {/* Standard Three.js fog as fallback (DISABLED for diagnostic) */}
-      {/* <fog attach="fog" args={[interpolatedFog.color, interpolatedFog.near, interpolatedFog.far]} /> */}
+      {/* Standard Three.js fog as fallback */}
+      <fog attach="fog" args={[interpolatedFog.color, interpolatedFog.near, interpolatedFog.far]} />
 
       {/* Volumetric Fog Mesh - large sphere around camera (DISABLED for diagnostic) */}
       {/* <mesh geometry={new THREE.SphereGeometry(1000, 32, 16)} material={fogMaterialRef.current!}

@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { Environment } from './Environment';
 import { Submersible } from './Submersible';
 import { Searchlight } from './Searchlight';
-// import { Particles } from './Particles'; // DISABLED for diagnostic
+import { Particles } from './Particles';
 import { MassiveCreature } from './MassiveCreature';
 import { MarineLife } from './MarineLife';
 import { Terrain } from './Terrain';
@@ -231,13 +231,13 @@ export function AbyssCanvas({
               />
             )}
 
-            {/* ============ PARTICLES (marine snow) ============ (DISABLED for diagnostic) */}
-            {/* <Particles
+            {/* ============ PARTICLES (marine snow) ============ */}
+            <Particles
               zone={currentZone}
               zoneProgress={zoneProgress}
               reducedMotion={reducedMotion}
               isPaused={isPaused}
-            /> */}
+            />
 
             {/* ============ SUBMERSIBLE - Hero at origin, facing camera at 3/4 angle ============ */}
             {/* Rotate slightly so front faces camera at default position */}

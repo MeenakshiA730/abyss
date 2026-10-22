@@ -1,14 +1,14 @@
 /**
- * ABYSS — Particles Component
- * Marine snow, bioluminescent organisms, and drifting particulates at multiple depth layers
- * Uses unified zone configuration from @/config/zones
+ * ABYSS — Particles Component (marine snow)
+ * Single THREE.Points with one BufferGeometry, seeded PRNG, ~800 particles
+ * Per-frame motion mutates position attribute (needsUpdate = true)
  */
 
 import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import type { ZoneId } from '@/config/zones';
-import { ZONE_COLORS, ZONE_VISIBILITY } from '@/config/zones';
+import { ZONE_COLORS } from '@/config/zones';
 
 interface ParticlesProps {
   zone: ZoneId;
@@ -17,288 +17,165 @@ interface ParticlesProps {
   isPaused?: boolean;
 }
 
+// Seeded PRNG (mulberry32) - deterministic, no Math.random in render
+function createSeededRandom(seed: number) {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export function Particles({ zone, zoneProgress: _zoneProgress, reducedMotion, isPaused = false }: ParticlesProps) {
-  const particleSystemsRef = useRef<THREE.Points[]>([]);
+  const pointsRef = useRef<THREE.Points | null>(null);
+  const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const timeRef = useRef(0);
+  const initRef = useRef(false);
 
-  // Get visibility rules and colors for current zone
-  const visibility = ZONE_VISIBILITY[zone];
   const colors = ZONE_COLORS[zone];
+  const particleColor = colors.marineSnowColor;
+  const particleOpacity = 0.35;
 
-  // Create marine snow layers based on zone config
-  const createLayerGeometry = (config: { count: number; size: number; speed: number; color: string; opacity: number; radius: number; height: number; drift: number }, layerIndex: number) => {
-    const geometry = new THREE.BufferGeometry();
-    const count = config.count;
+  // Build single geometry once (or when zone changes)
+  useMemo(() => {
+    if (initRef.current) return;
+    initRef.current = true;
+
+    const count = 800;
     const positions = new Float32Array(count * 3);
     const velocities = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
-    const phases = new Float32Array(count);
     const alphas = new Float32Array(count);
-    // Pre-computed reset positions and alphas to avoid Math.random() in useFrame
-    const resetPositions = new Float32Array(count * 2);
-    const resetAlphas = new Float32Array(count);
+    const phases = new Float32Array(count);
+    const resetY = new Float32Array(count);
+    const resetXZ = new Float32Array(count * 2);
+
+    // Seeded PRNG for deterministic initialization
+    const rand = createSeededRandom(zone.length * 1000 + Date.now() % 1000);
+
+    // Zone-specific params
+    const radius = zone === 'sunlight' ? 50 : zone === 'twilight' ? 55 : zone === 'midnight' ? 50 : 40;
+    const height = zone === 'sunlight' ? 80 : zone === 'twilight' ? 90 : zone === 'midnight' ? 100 : 70;
+    const baseSpeed = zone === 'sunlight' ? 0.12 : zone === 'twilight' ? 0.08 : zone === 'midnight' ? 0.05 : 0.03;
+    const baseDrift = zone === 'sunlight' ? 0.4 : zone === 'twilight' ? 0.5 : zone === 'midnight' ? 0.6 : 0.4;
+    const baseSize = zone === 'sunlight' ? 0.1 : zone === 'twilight' ? 0.08 : zone === 'midnight' ? 0.06 : 0.05;
 
     for (let i = 0; i < count; i++) {
-      // Spherical distribution around camera
-      const radius = Math.random() * config.radius;
-      const height = (Math.random() - 0.5) * config.height;
-      const angle = Math.random() * Math.PI * 2;
+      // Spherical shell distribution around camera
+      const r = rand() * radius;
+      const h = (rand() - 0.5) * height;
+      const angle = rand() * Math.PI * 2;
 
-      positions[i * 3] = Math.cos(angle) * radius;
-      positions[i * 3 + 1] = height;
-      positions[i * 3 + 2] = Math.sin(angle) * radius;
+      positions[i * 3] = Math.cos(angle) * r;
+      positions[i * 3 + 1] = h;
+      positions[i * 3 + 2] = Math.sin(angle) * r;
 
-      // Velocity (downward drift with some horizontal movement)
-      velocities[i * 3] = (Math.random() - 0.5) * config.drift;
-      velocities[i * 3 + 1] = -config.speed * (0.5 + Math.random() * 0.5);
-      velocities[i * 3 + 2] = (Math.random() - 0.5) * config.drift;
+      // Velocity: downward + horizontal drift
+      velocities[i * 3] = (rand() - 0.5) * baseDrift;
+      velocities[i * 3 + 1] = -baseSpeed * (0.5 + rand() * 0.5);
+      velocities[i * 3 + 2] = (rand() - 0.5) * baseDrift;
 
-      sizes[i] = config.size * (0.5 + Math.random() * 0.5);
-      phases[i] = Math.random() * Math.PI * 2;
-      alphas[i] = config.opacity * (0.5 + Math.random() * 0.5);
+      sizes[i] = baseSize * (0.5 + rand() * 0.5);
+      alphas[i] = particleOpacity * (0.5 + rand() * 0.5);
+      phases[i] = rand() * Math.PI * 2;
 
-      // Pre-compute reset position (x, z) and alpha for when particle wraps
-      resetPositions[i * 2] = (Math.random() - 0.5) * config.radius * 2;
-      resetPositions[i * 2 + 1] = (Math.random() - 0.5) * config.radius * 2;
-      resetAlphas[i] = config.opacity * (0.5 + Math.random() * 0.5);
+      // Pre-compute reset position for wrapping
+      resetY[i] = height / 2;
+      resetXZ[i * 2] = (rand() - 0.5) * radius * 2;
+      resetXZ[i * 2 + 1] = (rand() - 0.5) * radius * 2;
     }
 
+    const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('velocity', new THREE.BufferAttribute(velocities, 3));
     geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-    geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
     geometry.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
-    geometry.setAttribute('resetPosition', new THREE.BufferAttribute(resetPositions, 2));
-    geometry.setAttribute('resetAlpha', new THREE.BufferAttribute(resetAlphas, 1));
-
-    return { geometry, config, layerIndex };
-  };
-
-  // Create bioluminescent particle geometry
-  const createBioGeometry = (config: { count: number; size: number; color: string; opacity: number; pulseSpeed: number }) => {
-    const geometry = new THREE.BufferGeometry();
-    const count = config.count;
-    const positions = new Float32Array(count * 3);
-    const sizes = new Float32Array(count);
-    const phases = new Float32Array(count);
-    const baseSizes = new Float32Array(count);
-
-    for (let i = 0; i < count; i++) {
-      const radius = Math.random() * 80 + 20;
-      const height = (Math.random() - 0.5) * 120;
-      const angle = Math.random() * Math.PI * 2;
-
-      positions[i * 3] = Math.cos(angle) * radius;
-      positions[i * 3 + 1] = height;
-      positions[i * 3 + 2] = Math.sin(angle) * radius;
-
-      const baseSize = config.size * (0.5 + Math.random() * 0.5);
-      sizes[i] = baseSize;
-      baseSizes[i] = baseSize;
-      phases[i] = Math.random() * Math.PI * 2;
-    }
-
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
     geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
-    geometry.setAttribute('baseSize', new THREE.BufferAttribute(baseSizes, 1));
+    geometry.setAttribute('resetY', new THREE.BufferAttribute(resetY, 1));
+    geometry.setAttribute('resetXZ', new THREE.BufferAttribute(resetXZ, 2));
 
-    return { geometry, config };
-  };
+    geometryRef.current = geometry;
 
-  // Initialize particle systems based on zone visibility
-  useMemo(() => {
-    particleSystemsRef.current = [];
-
-    // Marine snow layers - density and count based on zone
-    const layerConfigs = getMarineSnowLayers(zone);
-    layerConfigs.forEach((layerConfig, i) => {
-      const { geometry, config } = createLayerGeometry(layerConfig, i);
-
-      const material = new THREE.PointsMaterial({
-        color: config.color,
-        size: 1,
-        transparent: true,
-        opacity: 1,
-        sizeAttenuation: true,
-        depthWrite: false,
-        vertexColors: false,
-        map: createParticleTexture(),
-        alphaTest: 0.01,
-      });
-
-      const points = new THREE.Points(geometry, material);
-      points.renderOrder = i;
-      particleSystemsRef.current.push(points);
+    // Single shared material
+    const material = new THREE.PointsMaterial({
+      color: particleColor,
+      size: 1,
+      transparent: true,
+      opacity: 1,
+      sizeAttenuation: true,
+      depthWrite: false,
+      vertexColors: false,
+      map: createParticleTexture(),
+      alphaTest: 0.01,
     });
 
-    // Bioluminescent layer - only in zones where visible
-    if (visibility.bioluminescentOrgs) {
-      const bioConfig = getBioConfig(zone);
-      const { geometry: bioGeometry, config: bioConfigData } = createBioGeometry(bioConfig);
-      const bioMaterial = new THREE.PointsMaterial({
-        color: bioConfigData.color,
-        size: 1,
-        transparent: true,
-        opacity: bioConfigData.opacity,
-        sizeAttenuation: true,
-        depthWrite: false,
-        map: createBioTexture(),
-        blending: THREE.AdditiveBlending,
-      });
+    const points = new THREE.Points(geometry, material);
+    points.renderOrder = 0;
+    pointsRef.current = points;
+  }, [zone, particleColor, particleOpacity]);
 
-      const bioPoints = new THREE.Points(bioGeometry, bioMaterial);
-      bioPoints.renderOrder = 10;
-      particleSystemsRef.current.push(bioPoints);
-    }
-  }, [zone, visibility.bioluminescentOrgs, colors]);
-
-  // Animate particles
+  // Per-frame animation - mutate position attribute only
   useFrame((_, delta) => {
-    if (reducedMotion || isPaused) return;
+    if (reducedMotion || isPaused || !geometryRef.current) return;
     timeRef.current += delta;
 
-    particleSystemsRef.current.forEach((points, systemIndex) => {
-      const geometry = points.geometry as THREE.BufferGeometry;
-      const positions = geometry.attributes.position;
-      const isBio = systemIndex === particleSystemsRef.current.length - 1 && visibility.bioluminescentOrgs;
+    const geometry = geometryRef.current;
+    const positions = geometry.attributes.position as THREE.BufferAttribute;
+    const velocities = geometry.attributes.velocity as THREE.BufferAttribute;
+    const alphas = geometry.attributes.alpha as THREE.BufferAttribute;
+    const resetY = geometry.attributes.resetY as THREE.BufferAttribute;
+    const resetXZ = geometry.attributes.resetXZ as THREE.BufferAttribute;
+    const phases = geometry.attributes.phase as THREE.BufferAttribute;
+    const count = positions.count;
 
-      if (isBio) {
-        // Bioluminescent pulsing - slower and more subtle
-        const sizes = geometry.attributes.size;
-        const baseSizes = geometry.attributes.baseSize;
-        const phases = geometry.attributes.phase;
-        const bioConfig = getBioConfig(zone);
+    const halfHeight = zone === 'sunlight' ? 40 : zone === 'twilight' ? 45 : zone === 'midnight' ? 50 : 35;
 
-        for (let i = 0; i < sizes.count; i++) {
-          const phase = phases.getX(i);
-          const pulse = Math.sin(timeRef.current * bioConfig.pulseSpeed + phase) * 0.5 + 0.5;
-          sizes.setX(i, baseSizes.getX(i) * (0.7 + pulse * 0.3));
-        }
-        sizes.needsUpdate = true;
+    for (let i = 0; i < count; i++) {
+      // Update position
+      positions.setX(i, positions.getX(i) + velocities.getX(i) * delta);
+      positions.setY(i, positions.getY(i) + velocities.getY(i) * delta);
+      positions.setZ(i, positions.getZ(i) + velocities.getZ(i) * delta);
 
-        // Slow rotation of bio cloud
-        points.rotation.y += delta * 0.005;
-      } else {
-        // Marine snow falling
-        const velocities = geometry.attributes.velocity;
-        const alphas = geometry.attributes.alpha;
-        const resetPositions = geometry.attributes.resetPosition;
-        const resetAlphas = geometry.attributes.resetAlpha;
-        const layerConfigs = getMarineSnowLayers(zone);
-        const config = layerConfigs[systemIndex];
-        const layerHeight = config.height;
-
-        for (let i = 0; i < positions.count; i++) {
-          // Update position
-          positions.setX(i, positions.getX(i) + velocities.getX(i) * delta);
-          positions.setY(i, positions.getY(i) + velocities.getY(i) * delta);
-          positions.setZ(i, positions.getZ(i) + velocities.getZ(i) * delta);
-
-          // Wrap around when particles go below
-          if (positions.getY(i) < -layerHeight / 2) {
-            positions.setY(i, layerHeight / 2);
-            // Use pre-computed reset positions and alphas
-            positions.setX(i, resetPositions.getX(i));
-            positions.setZ(i, resetPositions.getY(i));
-            alphas.setX(i, resetAlphas.getX(i));
-          }
-
-          // Gentle horizontal oscillation
-          positions.setX(i, positions.getX(i) + Math.sin(timeRef.current + i) * 0.001);
-          positions.setZ(i, positions.getZ(i) + Math.cos(timeRef.current + i) * 0.001);
-        }
-        positions.needsUpdate = true;
+      // Wrap when below
+      if (positions.getY(i) < -halfHeight) {
+        positions.setY(i, resetY.getX(i));
+        positions.setX(i, resetXZ.getX(i * 2));
+        positions.setZ(i, resetXZ.getX(i * 2 + 1));
+        // Fade in on reset
+        alphas.setX(i, particleOpacity * (0.5 + (phases.getX(i) / (Math.PI * 2)) * 0.5));
       }
-    });
+
+      // Gentle horizontal oscillation (deterministic via phase)
+      const t = timeRef.current + phases.getX(i);
+      positions.setX(i, positions.getX(i) + Math.sin(t) * 0.0005);
+      positions.setZ(i, positions.getZ(i) + Math.cos(t) * 0.0005);
+    }
+
+    positions.needsUpdate = true;
   });
 
-  return (
-    <group>
-      {particleSystemsRef.current.map((points, i) => (
-        <primitive key={`particles-${i}`} object={points} dispose={null} />
-      ))}
-    </group>
-  );
+  if (!pointsRef.current) return null;
+
+  return <primitive object={pointsRef.current} dispose={null} />;
 }
 
-// Zone-specific marine snow layer configurations
-function getMarineSnowLayers(zone: ZoneId) {
-  const colors = ZONE_COLORS[zone];
-  const baseLayers = {
-    sunlight: [
-      { count: 800, size: 0.08, speed: 0.15, color: colors.marineSnowColor, opacity: 0.4, radius: 40, height: 60, drift: 0.3 },
-      { count: 400, size: 0.12, speed: 0.1, color: colors.marineSnowColor, opacity: 0.3, radius: 50, height: 80, drift: 0.5 },
-      { count: 200, size: 0.2, speed: 0.05, color: colors.marineSnowColor, opacity: 0.2, radius: 60, height: 100, drift: 0.8 },
-    ],
-    twilight: [
-      { count: 600, size: 0.06, speed: 0.12, color: colors.marineSnowColor, opacity: 0.35, radius: 45, height: 70, drift: 0.4 },
-      { count: 300, size: 0.1, speed: 0.08, color: colors.marineSnowColor, opacity: 0.25, radius: 55, height: 90, drift: 0.6 },
-      { count: 150, size: 0.15, speed: 0.04, color: colors.marineSnowColor, opacity: 0.15, radius: 65, height: 110, drift: 1.0 },
-    ],
-    midnight: [
-      { count: 400, size: 0.05, speed: 0.08, color: colors.marineSnowColor, opacity: 0.3, radius: 40, height: 80, drift: 0.5 },
-      { count: 200, size: 0.08, speed: 0.05, color: colors.marineSnowColor, opacity: 0.2, radius: 50, height: 100, drift: 0.8 },
-      { count: 100, size: 0.12, speed: 0.03, color: colors.marineSnowColor, opacity: 0.1, radius: 60, height: 120, drift: 1.2 },
-    ],
-    abyss: [
-      { count: 200, size: 0.04, speed: 0.04, color: colors.marineSnowColor, opacity: 0.25, radius: 35, height: 60, drift: 0.3 },
-      { count: 100, size: 0.06, speed: 0.02, color: colors.marineSnowColor, opacity: 0.15, radius: 45, height: 80, drift: 0.5 },
-      { count: 50, size: 0.1, speed: 0.01, color: colors.marineSnowColor, opacity: 0.1, radius: 55, height: 100, drift: 0.8 },
-    ],
-  };
-  return baseLayers[zone] || baseLayers.abyss;
-}
-
-// Zone-specific bioluminescent config
-function getBioConfig(zone: ZoneId) {
-  const colors = ZONE_COLORS[zone];
-  const configs = {
-    sunlight: { count: 50, size: 0.3, color: colors.bioParticleColor, opacity: 0.5, pulseSpeed: 0.6 },
-    twilight: { count: 80, size: 0.4, color: colors.bioParticleColor, opacity: 0.6, pulseSpeed: 0.5 },
-    midnight: { count: 120, size: 0.5, color: colors.bioParticleColor, opacity: 0.7, pulseSpeed: 0.4 },
-    abyss: { count: 60, size: 0.6, color: colors.bioParticleColor, opacity: 0.5, pulseSpeed: 0.3 },
-  };
-  return configs[zone] || configs.abyss;
-}
-
-// Create a simple circular particle texture
+// Shared particle texture (created once)
+let particleTexture: THREE.Texture | null = null;
 function createParticleTexture(): THREE.Texture {
+  if (particleTexture) return particleTexture;
   const canvas = document.createElement('canvas');
   canvas.width = 32;
   canvas.height = 32;
   const ctx = canvas.getContext('2d')!;
-
   const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
   gradient.addColorStop(0, 'rgba(255,255,255,1)');
   gradient.addColorStop(0.5, 'rgba(255,255,255,0.5)');
   gradient.addColorStop(1, 'rgba(255,255,255,0)');
-
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 32, 32);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
-}
-
-// Create a softer glow texture for bioluminescent particles
-function createBioTexture(): THREE.Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d')!;
-
-  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  gradient.addColorStop(0, 'rgba(255,255,255,1)');
-  gradient.addColorStop(0.3, 'rgba(255,255,255,0.8)');
-  gradient.addColorStop(0.6, 'rgba(255,255,255,0.3)');
-  gradient.addColorStop(1, 'rgba(255,255,255,0)');
-
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 64, 64);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  return texture;
+  particleTexture = new THREE.CanvasTexture(canvas);
+  particleTexture.needsUpdate = true;
+  return particleTexture;
 }

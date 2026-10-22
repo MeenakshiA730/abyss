@@ -219,7 +219,7 @@ timeRef.current += delta;
     perspCamera.position.lerp(desiredPosition, lerp);
 
     // Smooth look-at with slight lag for organic feel
-    if (camstep >= 3) {
+    if (camstep === 0 || camstep >= 3) {
       const lookAtLerp = Math.min(lerp * 0.7, 1);
       if (!lookAtInitRef.current) {
         lookAtRef.current.copy(desiredLookAt);

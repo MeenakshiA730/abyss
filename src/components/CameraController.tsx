@@ -58,6 +58,8 @@ export function CameraController({
   const shakeIntensityRef = useRef(0);
   const lastZoneChangeRef = useRef(currentZone);
   const cinematicOffsetRef = useRef(new THREE.Vector3());
+  const lookAtRef = useRef(new THREE.Vector3());
+  const lookAtInitRef = useRef(false);
 
   // Zone-specific camera configurations with cinematic framing
   const zoneCameraConfigs = useMemo((): Record<ZoneId, ZoneCameraConfig> => ({
@@ -218,11 +220,13 @@ timeRef.current += delta;
 
     // Smooth look-at with slight lag for organic feel
     if (camstep >= 3) {
-      const lookAtLerp = lerp * 0.7;
-      const currentLookAt = new THREE.Vector3();
-      perspCamera.getWorldDirection(currentLookAt).multiplyScalar(-1).add(perspCamera.position);
-      currentLookAt.lerp(desiredLookAt, lookAtLerp);
-      perspCamera.lookAt(currentLookAt);
+      const lookAtLerp = Math.min(lerp * 0.7, 1);
+      if (!lookAtInitRef.current) {
+        lookAtRef.current.copy(desiredLookAt);
+        lookAtInitRef.current = true;
+      }
+      lookAtRef.current.lerp(desiredLookAt, lookAtLerp);
+      perspCamera.lookAt(lookAtRef.current);
     }
 
     // Apply subtle roll for tension in deep zones

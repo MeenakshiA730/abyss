@@ -56,3 +56,64 @@ Uncommented standard `<fog attach="fog" args={[interpolatedFog.color, interpolat
 
 ### Test
 Open plain URL and verify no blinking returns. Report result.
+
+---
+
+## 2026-10-22: Restoration step 2 — Fog uniform updates
+
+### Action
+Per-frame fog uniform updates (volumetric fog shader) were already active in ZoneLighting.tsx (lines 226-241). The 10Hz throttle was previously removed; they run every frame updating `uTime`, `uCameraPos`, `uSunDirection`, `uSunColor`, `uSunIntensity`, `uFogColor`, `uFogDensity`, `uZoneProgress`, `uZone`. No code change required.
+
+### Commit
+`e499c96` — "restore: fog uniforms (already active per-frame)"
+
+### Test
+Open plain URL and verify no blinking returns. Report result.
+
+---
+
+## 2026-10-22: Restoration step 3 — Volumetric fog sphere
+
+### Action
+Uncommented volumetric fog mesh in ZoneLighting.tsx (lines 253-255):
+```tsx
+<mesh geometry={new THREE.SphereGeometry(1000, 32, 16)} material={fogMaterialRef.current!}
+      position={[0, 0, 0]} renderOrder={0} />
+```
+Uses the shader material with per-frame uniform updates (step 2). Renders as BackSide sphere around camera at renderOrder 0.
+
+### Commit
+`8e5e49b` — "restore: volumetric fog"
+
+### Test
+Open plain URL and verify:
+- No scene-wide blinking
+- Volumetric fog visible (height-based density, god rays, deep zone bioluminescence glow)
+- Render counters flat while idle
+Report result.
+
+---
+
+## 2026-10-22: Restoration step 4 — Particles (marine snow)
+
+### Action
+Rewrote Particles.tsx as a single THREE.Points with one BufferGeometry (~800 particles):
+- Seeded PRNG (mulberry32) for deterministic initialization — no Math.random in render
+- Single shared PointsMaterial with circular gradient texture (cached module-level)
+- Per-frame motion in useFrame: mutates position attribute, sets `needsUpdate = true`
+- Particles fall down, wrap to top with pre-computed reset positions
+- Gentle horizontal oscillation via deterministic phase offsets
+- Geometry created once in useMemo (keyed by zone), never recreated on re-render
+- Re-enabled in AbyssCanvas.tsx (uncommented import and JSX)
+
+### Commit
+`6fea971` — "restore: particles (Points)"
+
+### Test
+Open plain URL and verify:
+- No scene-wide blinking
+- Marine snow visible (falling white particulates, ~800 particles)
+- Particles wrap smoothly, no allocation churn
+- Render counters flat while idle
+- Performance stable (single draw call, one geometry)
+Report result.

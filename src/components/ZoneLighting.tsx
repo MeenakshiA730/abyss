@@ -27,36 +27,14 @@ interface ZoneLightingProps {
   zone: ZoneId;
   zoneProgress: number;
   _depth: number;
-  nolights?: boolean;
 }
 
-export function ZoneLighting({ zone, zoneProgress, nolights = false }: ZoneLightingProps) {
+export function ZoneLighting({ zone, zoneProgress }: ZoneLightingProps) {
   const { camera } = useThree();
   const interpolatedLighting = useMemo(() => getInterpolatedLighting(zone, zoneProgress), [zone, zoneProgress]);
   const interpolatedFog = useMemo(() => getInterpolatedFog(zone, zoneProgress), [zone, zoneProgress]);
   const currentColors = ZONE_COLORS[zone];
   const debugEnabled = useDebugFlag();
-
-  // When nolights is true, render minimal lighting (background + one ambient)
-  if (nolights) {
-    const bgColor = useMemo(() => {
-      const currentIndex = ZONE_ORDER.indexOf(zone);
-      if (currentIndex === ZONE_ORDER.length - 1 || zoneProgress <= 0) {
-        return currentColors.waterColorDeep;
-      }
-      const nextZone = ZONE_ORDER[currentIndex + 1];
-      const nextColors = ZONE_COLORS[nextZone];
-      return lerpHexColor(currentColors.waterColorDeep, nextColors.waterColorDeep, zoneProgress * 0.3);
-    }, [zone, zoneProgress, currentColors]);
-
-    return (
-      <>
-        <ZoneLightingRenderCounter enabled={debugEnabled} />
-        <color attach="background" args={[bgColor]} />
-        <ambientLight color="#ffffff" intensity={0.5} />
-      </>
-    );
-  }
 
   // Refs for volumetric effects
   const fogMaterialRef = useRef<THREE.ShaderMaterial | null>(null);

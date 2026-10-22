@@ -7,7 +7,6 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
-import { getDebugFlags } from '@/debugFlags';
 
 export type ZoneId = 'sunlight' | 'twilight' | 'midnight' | 'abyss';
 
@@ -34,11 +33,6 @@ interface CameraControllerProps {
 }
 
 const ZONE_ORDER: ZoneId[] = ['sunlight', 'twilight', 'midnight', 'abyss'];
-
-// Debug flags (parsed once at startup)
-const debugFlags = getDebugFlags();
-const debugEnabled = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('debug') === 'true' || new URLSearchParams(window.location.search).get('debug') === '1');
-const mountTimeRef = { current: performance.now() };
 
 export function CameraController({
   depth,
@@ -109,39 +103,13 @@ export function CameraController({
     },
   }), []);
 
-
-// Smooth zone transition and cinematic camera movement
-useFrame((_, delta) => {
+  // Smooth zone transition and cinematic camera movement
+  useFrame((_, delta) => {
     if (reducedMotion || isPaused) return;
 
-    const camstep = debugFlags.camstep || 0;
+    timeRef.current += delta;
 
-    // Dev-only diagnostic guards behind ?debug (read once at module level)
-if (debugEnabled) {
-  const pos = perspCamera.position;
-  const quat = perspCamera.quaternion;
-  const fov = perspCamera.fov;
-  const bad = [];
-  if (!isFinite(pos.x)) bad.push('pos.x');
-  if (!isFinite(pos.y)) bad.push('pos.y');
-  if (!isFinite(pos.z)) bad.push('pos.z');
-  if (!isFinite(quat.x)) bad.push('quat.x');
-  if (!isFinite(quat.y)) bad.push('quat.y');
-  if (!isFinite(quat.z)) bad.push('quat.z');
-  if (!isFinite(quat.w)) bad.push('quat.w');
-  if (!isFinite(fov)) bad.push('fov');
-  if (bad.length) {
-    console.warn('[ABYSS-CAM] NaN/Inf in ' + bad.join(', ') + ' zone=' + currentZone);
-  }
-  if (delta > 0.1) {
-    const sinceMount = (performance.now() - mountTimeRef.current) / 1000;
-    console.warn('[ABYSS-CAM] large delta=' + delta.toFixed(3) + 's sinceMount=' + sinceMount.toFixed(2) + 's zone=' + currentZone);
-  }
-}
-
-timeRef.current += delta;
-
-// Detect zone change for transition
+    // Detect zone change for transition
     if (currentZoneRef.current !== currentZone) {
       currentZoneRef.current = currentZone;
       transitionProgressRef.current = 0;
@@ -184,7 +152,6 @@ timeRef.current += delta;
     const targetFov = baseFov - depthFovReduction;
 
     // Calculate desired camera position relative to submersible with cinematic framing
-    // The targetPosition already includes the descent Y position from AbyssCanvas
     const desiredPosition = targetPosition.clone().add(targetOffset);
 
     // Apply rule-of-thirds horizontal offset (perpendicular to view direction)
@@ -194,18 +161,8 @@ timeRef.current += delta;
 
     const desiredLookAt = targetPosition.clone().add(targetLookAtOffset);
 
-    // Add camera shake - deterministic sine-based to avoid per-frame flicker
-    if (camstep >= 2 && shakeIntensityRef.current > 0) {
-      const shakeSpeed = 25; // High frequency for shake feel
-      const t = timeRef.current * shakeSpeed;
-      const shakeX = Math.sin(t * 1.0) * shakeIntensityRef.current * 0.5;
-      const shakeY = Math.sin(t * 1.3 + 0.7) * shakeIntensityRef.current * 0.3;
-      const shakeZ = Math.sin(t * 0.9 + 1.9) * shakeIntensityRef.current * 0.2;
-      desiredPosition.add(new THREE.Vector3(shakeX, shakeY, shakeZ));
-    }
-
     // Subtle cinematic breathing - very slow, organic movement
-    if (camstep >= 2 && !reducedMotion && shakeIntensityRef.current === 0) {
+    if (!reducedMotion && shakeIntensityRef.current === 0) {
       const breathSpeed = 0.15;
       const breathAmount = 0.08;
       cinematicOffsetRef.current.x = Math.sin(timeRef.current * breathSpeed) * breathAmount;
@@ -218,29 +175,23 @@ timeRef.current += delta;
     const lerp = lerpFactorRef.current;
     perspCamera.position.lerp(desiredPosition, lerp);
 
-    // Smooth look-at with slight lag for organic feel
-    if (camstep === 0 || camstep >= 3) {
-      const lookAtLerp = Math.min(lerp * 0.7, 1);
-      if (!lookAtInitRef.current) {
-        lookAtRef.current.copy(desiredLookAt);
-        lookAtInitRef.current = true;
-      }
-      lookAtRef.current.lerp(desiredLookAt, lookAtLerp);
-      perspCamera.lookAt(lookAtRef.current);
+    // Smooth look-at with slight lag for organic feel (persistent ref, no allocation)
+    const lookAtLerp = Math.min(lerp * 0.7, 1);
+    if (!lookAtInitRef.current) {
+      lookAtRef.current.copy(desiredLookAt);
+      lookAtInitRef.current = true;
     }
+    lookAtRef.current.lerp(desiredLookAt, lookAtLerp);
+    perspCamera.lookAt(lookAtRef.current);
 
-    // Apply subtle roll for tension in deep zones
-    if (camstep === 0) {
-      const currentRoll = perspCamera.rotation.z;
-      const targetRollLerped = THREE.MathUtils.lerp(currentRoll, targetRoll, lerp * 0.3);
-      perspCamera.rotation.z = targetRollLerped;
-    }
+    // Apply subtle roll for tension in deep zones (runs AFTER lookAt in same frame)
+    const currentRoll = perspCamera.rotation.z;
+    const targetRollLerped = THREE.MathUtils.lerp(currentRoll, targetRoll, lerp * 0.3);
+    perspCamera.rotation.z = targetRollLerped;
 
-    // Smooth FOV transition (skip if ?camfov=0)
-    if (!debugFlags.camfov) {
-      perspCamera.fov = THREE.MathUtils.lerp(perspCamera.fov, targetFov, lerp * 0.3);
-      perspCamera.updateProjectionMatrix();
-    }
+    // Smooth FOV transition
+    perspCamera.fov = THREE.MathUtils.lerp(perspCamera.fov, targetFov, lerp * 0.3);
+    perspCamera.updateProjectionMatrix();
 
     // Update renderer for proper projection
     if (gl) {

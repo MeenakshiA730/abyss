@@ -1,84 +1,25 @@
 /**
  * ABYSS — Debug Flags
- * URL query parameter flags for bisecting rendering issues.
- * Read once at startup, no runtime reactivity.
- * With no flags, app behaves exactly as before.
+ * Only the ?debug flag remains for the dev overlay.
+ * All bisect flags removed after root cause fixed.
  */
 
 export interface DebugFlags {
-  nopost: boolean;       // Disable EffectComposer/FXAA entirely
-  noenv: boolean;        // Disable Environment component (HDR/env map)
-  nolights: boolean;     // Disable ZoneLighting lights (keep one ambient)
-  noterrain: boolean;    // Disable Terrain
-  nomarine: boolean;     // Disable MarineLife
-  nosub: boolean;        // Disable Submersible
-  nowreck: boolean;      // Disable Shipwreck/ResearchStation/ROV
-  noshadows: boolean;    // Disable shadows on renderer and all lights
-  dpr: boolean;          // Force DPR to 1
-  noaa: boolean;         // Disable antialias
-  cube: boolean;         // Render ONLY a single rotating cube (baseline)
-  nocamera: boolean;     // Disable CameraController (static camera)
-  frozen: boolean;       // Disable ALL useFrame animations in scene components
-  camfov: boolean;       // Skip per-frame fov lerp and updateProjectionMatrix
-  camstep: number;       // Camera step level: 1=pos only, 2=+shake, 3=+lookAt
+  debug: boolean; // Enables dev overlay (FPS, gl.info, Canvas mount counter)
 }
 
 /**
- * Parse debug flags from URL search params.
+ * Parse debug flag from URL search params.
  * Call ONCE at app startup.
  */
 export function parseDebugFlags(): DebugFlags {
   if (typeof window === 'undefined') {
-    return defaultFlags();
+    return { debug: false };
   }
 
   const params = new URLSearchParams(window.location.search);
-  const flags: DebugFlags = {
-    nopost: params.get('nopost') === '1',
-    noenv: params.get('noenv') === '1',
-    nolights: params.get('nolights') === '1',
-    noterrain: params.get('noterrain') === '1',
-    nomarine: params.get('nomarine') === '1',
-    nosub: params.get('nosub') === '1',
-    nowreck: params.get('nowreck') === '1',
-    noshadows: params.get('noshadows') === '1',
-    dpr: params.get('dpr') === '1',
-    noaa: params.get('noaa') === '1',
-    cube: params.get('cube') === '1',
-    nocamera: params.get('nocamera') === '1',
-    frozen: params.get('frozen') === '1',
-    camfov: params.has('camfov'),
-    camstep: parseInt(params.get('camstep') || '0', 10),
-  };
-
-  // Log active flags at startup
-  const active = Object.entries(flags)
-    .filter(([, v]) => v)
-    .map(([k]) => k);
-  if (active.length > 0) {
-    console.log(`[ABYSS-DEBUG] Active flags: ${active.join(', ')}`);
-  }
-
-  return flags;
-}
-
-function defaultFlags(): DebugFlags {
   return {
-    nopost: false,
-    noenv: false,
-    nolights: false,
-    noterrain: false,
-    nomarine: false,
-    nosub: false,
-    nowreck: false,
-    noshadows: false,
-    dpr: false,
-    noaa: false,
-    cube: false,
-    nocamera: false,
-    frozen: false,
-    camfov: false,
-    camstep: 0,
+    debug: params.get('debug') === 'true' || params.get('debug') === '1',
   };
 }
 

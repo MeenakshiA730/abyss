@@ -19,6 +19,7 @@ export interface DebugFlags {
   cube: boolean;         // Render ONLY a single rotating cube (baseline)
   nocamera: boolean;     // Disable CameraController (static camera)
   frozen: boolean;       // Disable ALL useFrame animations in scene components
+  camfov: boolean;       // Skip per-frame fov lerp and updateProjectionMatrix
 }
 
 /**
@@ -45,6 +46,7 @@ export function parseDebugFlags(): DebugFlags {
     cube: params.get('cube') === '1',
     nocamera: params.get('nocamera') === '1',
     frozen: params.get('frozen') === '1',
+    camfov: params.get('camfov') === '1',
   };
 
   // Log active flags at startup
@@ -73,6 +75,7 @@ function defaultFlags(): DebugFlags {
     cube: false,
     nocamera: false,
     frozen: false,
+    camfov: false,
   };
 }
 

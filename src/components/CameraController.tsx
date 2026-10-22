@@ -7,6 +7,7 @@
 import { useFrame, useThree } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { getDebugFlags } from '@/debugFlags';
 
 export type ZoneId = 'sunlight' | 'twilight' | 'midnight' | 'abyss';
 
@@ -33,6 +34,9 @@ interface CameraControllerProps {
 }
 
 const ZONE_ORDER: ZoneId[] = ['sunlight', 'twilight', 'midnight', 'abyss'];
+
+// Debug flags (parsed once at startup)
+const debugFlags = getDebugFlags();
 
 export function CameraController({
   depth,
@@ -104,6 +108,20 @@ export function CameraController({
   // Smooth zone transition and cinematic camera movement
   useFrame((_, delta) => {
     if (reducedMotion || isPaused) return;
+
+    // Dev-only diagnostic guard behind ?debug
+    const debugEnabled = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('debug') === 'true' || new URLSearchParams(window.location.search).get('debug') === '1');
+    if (debugEnabled) {
+      const pos = perspCamera.position;
+      const quat = perspCamera.quaternion;
+      const fov = perspCamera.fov;
+      const hasNaN = !isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z) ||
+                     !isFinite(quat.x) || !isFinite(quat.y) || !isFinite(quat.z) || !isFinite(quat.w) ||
+                     !isFinite(fov);
+      if (hasNaN || delta > 0.1) {
+        console.warn('[ABYSS-CAM] NaN/Inf or large delta', { zone: currentZone, delta, pos: pos.toArray(), quat: quat.toArray(), fov });
+      }
+    }
 
     timeRef.current += delta;
 
@@ -196,9 +214,11 @@ export function CameraController({
     const targetRollLerped = THREE.MathUtils.lerp(currentRoll, targetRoll, lerp * 0.3);
     perspCamera.rotation.z = targetRollLerped;
 
-    // Smooth FOV transition
-    perspCamera.fov = THREE.MathUtils.lerp(perspCamera.fov, targetFov, lerp * 0.3);
-    perspCamera.updateProjectionMatrix();
+    // Smooth FOV transition (skip if ?camfov=0)
+    if (!debugFlags.camfov) {
+      perspCamera.fov = THREE.MathUtils.lerp(perspCamera.fov, targetFov, lerp * 0.3);
+      perspCamera.updateProjectionMatrix();
+    }
 
     // Update renderer for proper projection
     if (gl) {

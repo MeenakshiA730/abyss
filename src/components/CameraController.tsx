@@ -37,6 +37,8 @@ const ZONE_ORDER: ZoneId[] = ['sunlight', 'twilight', 'midnight', 'abyss'];
 
 // Debug flags (parsed once at startup)
 const debugFlags = getDebugFlags();
+const debugEnabled = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('debug') === 'true' || new URLSearchParams(window.location.search).get('debug') === '1');
+const mountTimeRef = { current: performance.now() };
 
 export function CameraController({
   depth,
@@ -105,27 +107,39 @@ export function CameraController({
     },
   }), []);
 
-  // Smooth zone transition and cinematic camera movement
-  useFrame((_, delta) => {
+
+// Smooth zone transition and cinematic camera movement
+useFrame((_, delta) => {
     if (reducedMotion || isPaused) return;
 
-    // Dev-only diagnostic guard behind ?debug
-    const debugEnabled = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('debug') === 'true' || new URLSearchParams(window.location.search).get('debug') === '1');
-    if (debugEnabled) {
-      const pos = perspCamera.position;
-      const quat = perspCamera.quaternion;
-      const fov = perspCamera.fov;
-      const hasNaN = !isFinite(pos.x) || !isFinite(pos.y) || !isFinite(pos.z) ||
-                     !isFinite(quat.x) || !isFinite(quat.y) || !isFinite(quat.z) || !isFinite(quat.w) ||
-                     !isFinite(fov);
-      if (hasNaN || delta > 0.1) {
-        console.warn('[ABYSS-CAM] NaN/Inf or large delta', { zone: currentZone, delta, pos: pos.toArray(), quat: quat.toArray(), fov });
-      }
-    }
+    const camstep = debugFlags.camstep || 0;
 
-    timeRef.current += delta;
+    // Dev-only diagnostic guards behind ?debug (read once at module level)
+if (debugEnabled) {
+  const pos = perspCamera.position;
+  const quat = perspCamera.quaternion;
+  const fov = perspCamera.fov;
+  const bad = [];
+  if (!isFinite(pos.x)) bad.push('pos.x');
+  if (!isFinite(pos.y)) bad.push('pos.y');
+  if (!isFinite(pos.z)) bad.push('pos.z');
+  if (!isFinite(quat.x)) bad.push('quat.x');
+  if (!isFinite(quat.y)) bad.push('quat.y');
+  if (!isFinite(quat.z)) bad.push('quat.z');
+  if (!isFinite(quat.w)) bad.push('quat.w');
+  if (!isFinite(fov)) bad.push('fov');
+  if (bad.length) {
+    console.warn('[ABYSS-CAM] NaN/Inf in ' + bad.join(', ') + ' zone=' + currentZone);
+  }
+  if (delta > 0.1) {
+    const sinceMount = (performance.now() - mountTimeRef.current) / 1000;
+    console.warn('[ABYSS-CAM] large delta=' + delta.toFixed(3) + 's sinceMount=' + sinceMount.toFixed(2) + 's zone=' + currentZone);
+  }
+}
 
-    // Detect zone change for transition
+timeRef.current += delta;
+
+// Detect zone change for transition
     if (currentZoneRef.current !== currentZone) {
       currentZoneRef.current = currentZone;
       transitionProgressRef.current = 0;
@@ -179,7 +193,7 @@ export function CameraController({
     const desiredLookAt = targetPosition.clone().add(targetLookAtOffset);
 
     // Add camera shake - deterministic sine-based to avoid per-frame flicker
-    if (shakeIntensityRef.current > 0) {
+    if (camstep >= 2 && shakeIntensityRef.current > 0) {
       const shakeSpeed = 25; // High frequency for shake feel
       const t = timeRef.current * shakeSpeed;
       const shakeX = Math.sin(t * 1.0) * shakeIntensityRef.current * 0.5;
@@ -189,7 +203,7 @@ export function CameraController({
     }
 
     // Subtle cinematic breathing - very slow, organic movement
-    if (!reducedMotion && shakeIntensityRef.current === 0) {
+    if (camstep >= 2 && !reducedMotion && shakeIntensityRef.current === 0) {
       const breathSpeed = 0.15;
       const breathAmount = 0.08;
       cinematicOffsetRef.current.x = Math.sin(timeRef.current * breathSpeed) * breathAmount;
@@ -203,16 +217,20 @@ export function CameraController({
     perspCamera.position.lerp(desiredPosition, lerp);
 
     // Smooth look-at with slight lag for organic feel
-    const lookAtLerp = lerp * 0.7;
-    const currentLookAt = new THREE.Vector3();
-    perspCamera.getWorldDirection(currentLookAt).multiplyScalar(-1).add(perspCamera.position);
-    currentLookAt.lerp(desiredLookAt, lookAtLerp);
-    perspCamera.lookAt(currentLookAt);
+    if (camstep >= 3) {
+      const lookAtLerp = lerp * 0.7;
+      const currentLookAt = new THREE.Vector3();
+      perspCamera.getWorldDirection(currentLookAt).multiplyScalar(-1).add(perspCamera.position);
+      currentLookAt.lerp(desiredLookAt, lookAtLerp);
+      perspCamera.lookAt(currentLookAt);
+    }
 
     // Apply subtle roll for tension in deep zones
-    const currentRoll = perspCamera.rotation.z;
-    const targetRollLerped = THREE.MathUtils.lerp(currentRoll, targetRoll, lerp * 0.3);
-    perspCamera.rotation.z = targetRollLerped;
+    if (camstep === 0) {
+      const currentRoll = perspCamera.rotation.z;
+      const targetRollLerped = THREE.MathUtils.lerp(currentRoll, targetRoll, lerp * 0.3);
+      perspCamera.rotation.z = targetRollLerped;
+    }
 
     // Smooth FOV transition (skip if ?camfov=0)
     if (!debugFlags.camfov) {

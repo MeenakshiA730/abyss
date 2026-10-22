@@ -20,6 +20,7 @@ export interface DebugFlags {
   nocamera: boolean;     // Disable CameraController (static camera)
   frozen: boolean;       // Disable ALL useFrame animations in scene components
   camfov: boolean;       // Skip per-frame fov lerp and updateProjectionMatrix
+  camstep: number;       // Camera step level: 1=pos only, 2=+shake, 3=+lookAt
 }
 
 /**
@@ -46,7 +47,8 @@ export function parseDebugFlags(): DebugFlags {
     cube: params.get('cube') === '1',
     nocamera: params.get('nocamera') === '1',
     frozen: params.get('frozen') === '1',
-    camfov: params.get('camfov') === '1',
+    camfov: params.has('camfov'),
+    camstep: parseInt(params.get('camstep') || '0', 10),
   };
 
   // Log active flags at startup
@@ -76,6 +78,7 @@ function defaultFlags(): DebugFlags {
     nocamera: false,
     frozen: false,
     camfov: false,
+    camstep: 0,
   };
 }
 

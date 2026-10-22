@@ -117,3 +117,42 @@ Open plain URL and verify:
 - Render counters flat while idle
 - Performance stable (single draw call, one geometry)
 Report result.
+
+---
+
+## 2026-10-22: Phase 0 — Final Summary
+
+### Root Cause
+The old lookAt block rebuilt its target from the camera's own direction each frame (`getWorldDirection`, negated, plus position), creating a feedback loop. The target jittered behind the camera, causing scene-wide blinking.
+
+### Fix
+Added a persistent `lookAtRef` vector initialized once, then lerped toward the desired target each frame. The camera now looks at a stable, interpolated point.
+
+### Ruled Out (via bisect flags & isolation)
+- Camera shake, breathing, roll
+- Creature eye-blink / animation
+- Fog uniforms (per-frame volumetric shader updates)
+- Volumetric fog sphere mesh
+- Particles (marine snow)
+- Standard Three.js fog
+- EffectComposer / FXAA
+- Near/far plane settings
+- Float precision issues
+- DOM/CSS overlay layer
+
+### Restored (all stable)
+- Standard Three.js fog
+- Fog uniforms (per-frame)
+- Volumetric fog sphere
+- Particles (Points, ~800, seeded PRNG)
+
+### Commits
+- `c3d53d4` fix: persistent lookAt target
+- `5480b0d` fix: lookAt runs in default mode
+- `d81e29b` restore: standard fog
+- `e499c96` restore: fog uniforms
+- `8e5e49b` restore: volumetric fog
+- `6fea971` restore: particles (Points)
+- `76dc68e` cleanup: remove bisect flags
+
+Phase 0 complete. Ready for Phase 1 (UI bugs).

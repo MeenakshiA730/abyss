@@ -250,9 +250,9 @@ export function ZoneLighting({ zone, zoneProgress, nolights = false }: ZoneLight
       {/* Standard Three.js fog as fallback */}
       <fog attach="fog" args={[interpolatedFog.color, interpolatedFog.near, interpolatedFog.far]} />
 
-      {/* Volumetric Fog Mesh - large sphere around camera (DISABLED for diagnostic) */}
-      {/* <mesh geometry={new THREE.SphereGeometry(1000, 32, 16)} material={fogMaterialRef.current!}
-            position={[0, 0, 0]} renderOrder={0} /> */}
+      {/* Volumetric Fog Mesh - large sphere around camera */}
+      <mesh geometry={new THREE.SphereGeometry(1000, 32, 16)} material={fogMaterialRef.current!}
+            position={[0, 0, 0]} renderOrder={0} />
 
       {/* Caustics projector - projects animated caustics onto seabed */}
       <directionalLight

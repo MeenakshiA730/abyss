@@ -6,7 +6,7 @@
 import React, { useEffect, useRef, useState, useCallback, createContext, useContext } from 'react';
 import { motion, useTransform, useSpring, useMotionValue, AnimatePresence } from 'motion/react';
 import { AbyssCanvas } from './components/AbyssCanvas';
-import { useScroll, useScrollTo, ScrollProvider } from './hooks/useScrollContext';
+import { useScroll, useScrollTo, useScrollRefs, ScrollProvider } from './hooks/useScrollContext';
 import { useReducedMotion } from './hooks/useReducedMotion';
 import { creatures, getCreatureById, type Creature } from './data/creatures';
 import { getZoneById } from './data/zones';
@@ -566,24 +566,52 @@ function CreatureDetailPanel({
 }
 
 function TelemetryPanel({
-  depth,
   isPaused,
   onTogglePause,
   reducedMotion
 }: {
-  depth: number;
   isPaused: boolean;
   onTogglePause: () => void;
   reducedMotion: boolean;
 }) {
-  const telemetry = {
-    depth: formatDepth(depth),
-    pressure: formatPressure(depth),
-    temperature: formatTemperature(depth),
-    oxygen: formatOxygen(depth),
-    signal: formatSignal(depth),
-    status: depth > 5000 ? 'SIGNAL DEGRADING' : depth > 4000 ? 'CAUTION' : 'NOMINAL',
-  };
+  // Use live scroll refs for HUD; do not put per-frame depth in React state for 3D
+  const scrollRefs = useScrollRefs();
+  const [telemetry, setTelemetry] = useState({
+    depth: '0 m',
+    pressure: '1.0 atm',
+    temperature: '20.0°C',
+    oxygen: '100%',
+    signal: 'STRONG',
+    status: 'NOMINAL',
+  });
+  const rafRef = useRef<number | null>(null);
+  const frameRef = useRef(0);
+
+  // Throttled HUD update at ~15Hz (every 4 frames at 60fps)
+  useEffect(() => {
+    if (reducedMotion) return;
+
+    const animate = () => {
+      frameRef.current = (frameRef.current + 1) % 4;
+      if (frameRef.current === 0) {
+        const depth = scrollRefs.depth;
+        setTelemetry({
+          depth: formatDepth(depth),
+          pressure: formatPressure(depth),
+          temperature: formatTemperature(depth),
+          oxygen: formatOxygen(depth),
+          signal: formatSignal(depth),
+          status: depth > 5000 ? 'SIGNAL DEGRADING' : depth > 4000 ? 'CAUTION' : 'NOMINAL',
+        });
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, [scrollRefs, reducedMotion]);
 
   return (
     <div className="telemetry-panel" aria-label="Expedition telemetry">
@@ -602,7 +630,7 @@ function TelemetryPanel({
         <TelemetryItem label="SIGNAL" value={telemetry.signal} unit="" reducedMotion={reducedMotion} isText={true} />
       </div>
 
-      <SonarDisplay depth={depth} isPaused={isPaused} reducedMotion={reducedMotion} />
+      <SonarDisplay depth={scrollRefs.depth} isPaused={isPaused} reducedMotion={reducedMotion} />
 
       <motion.button
         className={`telemetry-control ${isPaused ? 'paused' : ''}`}
@@ -1202,7 +1230,6 @@ function AppInner() {
         />
 
         <TelemetryPanel
-          depth={depth}
           isPaused={isPaused}
           onTogglePause={() => setIsPaused(!isPaused)}
           reducedMotion={reducedMotion}

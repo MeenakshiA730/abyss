@@ -220,7 +220,7 @@ function HeroTitle({
   );
 }
 
-function DepthReadout({ depth, reducedMotion }: { depth: number; reducedMotion: boolean }) {
+export function DepthReadout({ depth, reducedMotion }: { depth: number; reducedMotion: boolean }) {
   const depthValue = useMotionValue(depth);
   const displayDepth = useSpring(depthValue, {
     stiffness: 100,
@@ -1205,7 +1205,6 @@ function AppInner() {
           <HeroTitle scrollProgress={scrollProgress} />
 
           <div className="hero-bottom">
-            <DepthReadout depth={depth} reducedMotion={reducedMotion} />
             <Coordinates depth={depth} />
             <DescendButton
               onClick={() => scrollToZone('twilight')}

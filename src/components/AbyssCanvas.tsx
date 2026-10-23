@@ -14,6 +14,7 @@ import { Searchlight } from './Searchlight';
 import { Particles } from './Particles';
 import { MassiveCreature } from './MassiveCreature';
 import { MarineLife } from './MarineLife';
+import { GlowLife } from './GlowLife';
 import { Terrain } from './Terrain';
 import { Shipwreck } from './Shipwreck';
 import { ResearchStation } from './ResearchStation';
@@ -217,6 +218,16 @@ export function AbyssCanvas({
           zoneProgress={zoneProgress}
           reducedMotion={reducedMotion}
           isPaused={isPaused}
+        />
+
+        {/* ============ GLOW LIFE - Bioluminescent deep sea creatures ============ */}
+        {/* Jellyfish, anglerfish, glowing plankton - additive blending, follows descent */}
+        <GlowLife
+          zone={currentZone}
+          zoneProgress={zoneProgress}
+          reducedMotion={reducedMotion}
+          isPaused={isPaused}
+          depth={depth}
         />
 
         {/* ============ MASSIVE CREATURE - At natural position [0, -20, -200] ============ */}

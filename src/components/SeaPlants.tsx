@@ -35,9 +35,9 @@ function getSeaPlantsOpacity(zone: ZoneId, zoneProgress: number): number {
 
 const EDGE_COLOR = 0x1f7a4a;
 const INNER_COLOR = 0x3ddc84;
-const COUNT = 110;
-const CLUMP_SIZE_MIN = 8;
-const CLUMP_SIZE_MAX = 12;
+const CLUMPS_PER_SIDE = 3;
+const CLUMP_SIZE_MIN = 10;
+const CLUMP_SIZE_MAX = 14;
 
 export function SeaPlants({
   zone,
@@ -53,9 +53,8 @@ export function SeaPlants({
 
   const plants = useMemo(() => {
     const rand = createSeededRandom(0x5ea1);
-    const count = COUNT;
 
-    // Build clumps: each clump has 8-12 blades, placed on left/right sides
+    // Build exactly 3 clumps per side (left/right)
     const clumps: Array<{
       centerX: number;
       centerZ: number;
@@ -71,38 +70,41 @@ export function SeaPlants({
       }>;
     }> = [];
 
-    let remaining = count;
-    while (remaining > 0) {
-      const bladeCount = Math.min(CLUMP_SIZE_MIN + Math.floor(rand() * (CLUMP_SIZE_MAX - CLUMP_SIZE_MIN + 1)), remaining);
-      const side = rand() < 0.5 ? -1 : 1;
-      const centerX = side * (9 + rand() * 19); // |x| between 9 and 28
-      const centerZ = -8 - rand() * 12; // z -8 to -20
-      const baseY = -7 + (rand() - 0.5) * 0.5; // base at ~-7
-      const clumpSwayPhase = rand() * Math.PI * 2;
+    for (const side of [-1, 1] as const) {
+      for (let c = 0; c < CLUMPS_PER_SIDE; c++) {
+        const bladeCount = CLUMP_SIZE_MIN + Math.floor(rand() * (CLUMP_SIZE_MAX - CLUMP_SIZE_MIN + 1));
+        // x range: left -34..-20, right 20..34
+        const centerX = side * (20 + rand() * 14);
+        // z between -4 and -12 (closer to camera)
+        const centerZ = -4 - rand() * 8;
+        const baseY = -8; // fixed base y
+        const clumpSwayPhase = rand() * Math.PI * 2;
 
-      const blades: Array<{
-        offsetX: number;
-        offsetZ: number;
-        height: number;
-        color: number;
-        phaseOffset: number;
-      }> = [];
+        const blades: Array<{
+          offsetX: number;
+          offsetZ: number;
+          height: number;
+          color: number;
+          phaseOffset: number;
+        }> = [];
 
-      for (let b = 0; b < bladeCount; b++) {
-        const angle = rand() * Math.PI * 2;
-        const radius = 0.3 + rand() * 0.5; // tight clump
-        blades.push({
-          offsetX: Math.cos(angle) * radius,
-          offsetZ: Math.sin(angle) * radius,
-          height: 3 + rand() * 2, // 3 to 5
-          color: rand() < 0.5 ? EDGE_COLOR : INNER_COLOR,
-          phaseOffset: rand() * Math.PI * 0.5, // slight per-blade variation
-        });
+        for (let b = 0; b < bladeCount; b++) {
+          const angle = rand() * Math.PI * 2;
+          const radius = 0.3 + rand() * 0.5; // tight clump
+          blades.push({
+            offsetX: Math.cos(angle) * radius,
+            offsetZ: Math.sin(angle) * radius,
+            height: 3 + rand() * 2, // 3 to 5
+            color: rand() < 0.5 ? EDGE_COLOR : INNER_COLOR,
+            phaseOffset: rand() * Math.PI * 0.5, // slight per-blade variation
+          });
+        }
+
+        clumps.push({ centerX, centerZ, bladeCount, baseY, swayPhase: clumpSwayPhase, blades });
       }
-
-      clumps.push({ centerX, centerZ, bladeCount, baseY, swayPhase: clumpSwayPhase, blades });
-      remaining -= bladeCount;
     }
+
+    const totalBlades = clumps.reduce((sum, cl) => sum + cl.bladeCount, 0);
 
     // Tapered blade geometry: thin plane with vertex scaling for taper
     const geo = new THREE.PlaneGeometry(0.12, 1, 1, 8); // width 0.12, height 1 (scaled per instance)
@@ -123,7 +125,7 @@ export function SeaPlants({
       side: THREE.DoubleSide,
     });
 
-    const mesh = new THREE.InstancedMesh(geo, mat, count);
+    const mesh = new THREE.InstancedMesh(geo, mat, totalBlades);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
 

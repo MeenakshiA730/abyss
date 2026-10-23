@@ -83,11 +83,11 @@ export function ReefFish({
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
 
-    // Fixed lanes for each school (y, z) and start x staggered
+    // Fixed lanes: horizontal band, small y differences, staggered x
     const lanes = [
-      { startX: -24, y: 5,    z: -18, speed: 0.4 },  // school 0: upper, far
-      { startX: -4,  y: 1.5,  z: -12, speed: 0.55 }, // school 1: middle (raised)
-      { startX: 16,  y: -3.5, z: -10, speed: 0.7 },  // school 2: lower, near (clears HUD)
+      { startX: -22, y: 1,   z: -12, speed: 0.5 },  // school 0
+      { startX: 0,   y: -0.5, z: -14, speed: 0.5 },  // school 1
+      { startX: 22,  y: 0.5,  z: -13, speed: 0.5 },  // school 2
     ];
 
     const schoolTravel = lanes.map(l => ({
@@ -109,11 +109,11 @@ export function ReefFish({
 
     for (let i = 0; i < count; i++) {
       const si = Math.floor(i / perSchool);
-      // Wider spread: x +-5, y +-1.8, z +-2
+      // Wide loose spread: x +-6, y +-3, z +-3
       const offset = new THREE.Vector3(
-        (rand() - 0.5) * 10,
-        (rand() - 0.5) * 3.6,
-        (rand() - 0.5) * 4
+        (rand() - 0.5) * 12,
+        (rand() - 0.5) * 6,
+        (rand() - 0.5) * 6
       );
       const driftPhaseY = rand() * Math.PI * 2;
       const driftPhaseZ = rand() * Math.PI * 2;
@@ -170,8 +170,8 @@ export function ReefFish({
       // Fish position: school center + fixed offset + slow drift on y/z
       const pos = new THREE.Vector3(
         schoolX + d.offset.x,
-        schoolY + d.offset.y + Math.sin(elapsed * 0.3 + d.driftPhaseY) * 0.6,
-        schoolZ + d.offset.z + Math.sin(elapsed * 0.3 + d.driftPhaseZ) * 0.6
+        schoolY + d.offset.y + Math.sin(elapsed * 0.25 + d.driftPhaseY) * 0.8,
+        schoolZ + d.offset.z + Math.sin(elapsed * 0.25 + d.driftPhaseZ) * 0.8
       );
 
       // Heading: all swim +X (0 rad) with tiny variation

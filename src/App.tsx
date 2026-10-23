@@ -628,11 +628,11 @@ function TelemetryPanel({
       </div>
 
       <div className="telemetry-grid">
-        <TelemetryItem label="DEPTH" value={telemetry.depth} unit="M" reducedMotion={reducedMotion} />
-        <TelemetryItem label="PRESSURE" value={telemetry.pressure} unit="ATM" reducedMotion={reducedMotion} />
-        <TelemetryItem label="TEMP" value={telemetry.temperature} unit="°C" reducedMotion={reducedMotion} />
-        <TelemetryItem label="O₂ RESERVE" value={telemetry.oxygen} unit="" reducedMotion={reducedMotion} />
-        <TelemetryItem label="SIGNAL" value={telemetry.signal} unit="" reducedMotion={reducedMotion} isText={true} />
+        <TelemetryItem label="DEPTH" value={telemetry.depth} reducedMotion={reducedMotion} />
+        <TelemetryItem label="PRESSURE" value={telemetry.pressure} reducedMotion={reducedMotion} />
+        <TelemetryItem label="TEMP" value={telemetry.temperature} reducedMotion={reducedMotion} />
+        <TelemetryItem label="O₂ RESERVE" value={telemetry.oxygen} reducedMotion={reducedMotion} />
+        <TelemetryItem label="SIGNAL" value={telemetry.signal} reducedMotion={reducedMotion} isText={true} />
       </div>
 
       <SonarDisplay depth={scrollRefs.depth} isPaused={isPaused} reducedMotion={reducedMotion} />
@@ -676,7 +676,7 @@ function TelemetryItem({
 }: {
   label: string;
   value: string;
-  unit: string;
+  unit?: string;
   reducedMotion: boolean;
   isText?: boolean;
 }) {
@@ -1210,7 +1210,7 @@ function AppInner() {
         <main className="hero-section">
           <HeroTitle scrollProgress={scrollProgress} scrollY={scrollY} />
 
-          <div className="hero-bottom">
+          <div className="hero-bottom" style={{ marginTop: 24, position: 'relative' }}>
             <DescendButton
               onClick={() => scrollToZone('twilight')}
               scrollProgress={scrollProgress}

@@ -16,6 +16,7 @@ import { MassiveCreature } from './MassiveCreature';
 import { MarineLife } from './MarineLife';
 import { GlowLife } from './GlowLife';
 import { ReefFish } from './ReefFish';
+import { SeaPlants } from './SeaPlants';
 import { Terrain } from './Terrain';
 import { Shipwreck } from './Shipwreck';
 import { ResearchStation } from './ResearchStation';
@@ -234,6 +235,16 @@ export function AbyssCanvas({
         {/* ============ REEF FISH - Sunlight zone schooling fish ============ */}
         {/* InstancedMesh, 60 fish, 3 schools, cone geometry, per-instance colors */}
         <ReefFish
+          zone={currentZone}
+          zoneProgress={zoneProgress}
+          reducedMotion={reducedMotion}
+          isPaused={isPaused}
+          depth={depth}
+        />
+
+        {/* ============ SEA PLANTS - Kelp/seagrass in sunlight zone ============ */}
+        {/* InstancedMesh, 60 tapered blades, CPU-side sway, per-instance colors */}
+        <SeaPlants
           zone={currentZone}
           zoneProgress={zoneProgress}
           reducedMotion={reducedMotion}

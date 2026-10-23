@@ -22,7 +22,7 @@ export function ROV({ zone, zoneProgress: _zoneProgress, reducedMotion, isPaused
   const frontLightTarget1 = useRef<THREE.Object3D>(new THREE.Object3D());
   const frontLightTarget2 = useRef<THREE.Object3D>(new THREE.Object3D());
   const timeRef = useRef(0);
-  const pathProgressRef = useRef(0);
+  const pathProgressRef = useRef(0.45);
 
   // Get visibility rules and colors for current zone
   const visibility = ZONE_VISIBILITY[zone];
@@ -190,7 +190,7 @@ export function ROV({ zone, zoneProgress: _zoneProgress, reducedMotion, isPaused
     timeRef.current += delta;
 
     // Move along path
-    pathProgressRef.current = (pathProgressRef.current + delta * 0.02) % 1;
+    pathProgressRef.current = (pathProgressRef.current + delta * 0.005) % 1;
     const point = rovPath.getPoint(pathProgressRef.current);
     const tangent = rovPath.getTangent(pathProgressRef.current);
 
@@ -286,7 +286,7 @@ export function ROV({ zone, zoneProgress: _zoneProgress, reducedMotion, isPaused
             })}
             rotation={[Math.PI / 2, 0, 0]}
             position={[0, 0, -1.2]}
-            scale={1 + Math.sin(timeRef.current * 20 + i) * 0.2}
+            scale={1 + Math.sin(timeRef.current * 10 + i) * 0.2}
           />
         </group>
       ))}

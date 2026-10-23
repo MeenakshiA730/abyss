@@ -35,6 +35,10 @@ function getReefOpacity(zone: ZoneId, zoneProgress: number): number {
 }
 
 const FISH_COLORS = [0xff7a30, 0xffd23f, 0x2fa8ff, 0xff5fa8, 0x45e08a] as const;
+const X_MIN = -30;
+const X_MAX = 30;
+const X_RANGE = X_MAX - X_MIN;
+const WRAP_FADE = 3; // units near edges to fade
 
 export function ReefFish({
   zone,
@@ -46,26 +50,26 @@ export function ReefFish({
   const { scene } = useThree();
   const groupRef = useRef<THREE.Group>(null);
   const _m4 = useRef(new THREE.Matrix4());
+  const _scaleVec = useRef(new THREE.Vector3());
 
   const fish = useMemo(() => {
     const rand = createSeededRandom(0xdecafbad);
     const count = 60;
     const schools = 3;
-    const perSchool = count / schools;
+    const perSchool = count / schools; // 20
 
     // Build fish shape once: flattened ellipsoid body + tail
     const bodyGeo = new THREE.SphereGeometry(0.5, 16, 8);
-    bodyGeo.scale(1.0, 0.4, 0.15); // 1.0 long along X, 0.4 tall, 0.15 thick
-    bodyGeo.translate(0.5, 0, 0); // center body at x=0.5 (nose at x=1.0)
+    bodyGeo.scale(1.0, 0.4, 0.15);
+    bodyGeo.translate(0.5, 0, 0);
 
-    const tailGeo = new THREE.ConeGeometry(0.175, 0.4, 4, 1); // radius 0.175, height 0.4
-    tailGeo.rotateZ(Math.PI / 2); // point along -X (backwards)
-    tailGeo.scale(0.4, 0.35, 0.05); // flat triangle: 0.4 long, 0.35 wide, 0.05 thick
-    tailGeo.translate(-0.2, 0, 0); // attach at back of body (body goes to x=0)
+    const tailGeo = new THREE.ConeGeometry(0.175, 0.4, 4, 1);
+    tailGeo.rotateZ(Math.PI / 2);
+    tailGeo.scale(0.4, 0.35, 0.05);
+    tailGeo.translate(-0.2, 0, 0);
 
     const geo = mergeGeometries([bodyGeo, tailGeo]);
-    // Total length ~1.4 (body 1.0 + tail 0.4)
-    geo.translate(0.7, 0, 0); // center at origin so fish pivots at center
+    geo.translate(0.7, 0, 0);
 
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -79,53 +83,46 @@ export function ReefFish({
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.frustumCulled = false;
 
-    // School centers: x at -9, 0 (y +4), +9; z 8-14 in front
-    const centers: THREE.Vector3[] = [
-      new THREE.Vector3(-9, -3, -8 - rand() * 6),   // left
-      new THREE.Vector3(0, 4, -8 - rand() * 6),     // center, above submersible
-      new THREE.Vector3(9, -3, -8 - rand() * 6),    // right
+    // Fixed lanes for each school (y, z) and start x staggered
+    const lanes = [
+      { startX: -24, y: 5,    z: -18, speed: 0.4 },  // school 0: upper, far
+      { startX: -4,  y: 1.5,  z: -12, speed: 0.55 }, // school 1: middle (raised)
+      { startX: 16,  y: -3.5, z: -10, speed: 0.7 },  // school 2: lower, near (clears HUD)
     ];
 
-    // School orbit data (shared per school)
-    const schoolOrbits: Array<{
-      center: THREE.Vector3;
-      orbitRadius: number;
-      orbitAngle: number;
-      orbitSpeed: number;
-    }> = [];
-
-    for (let s = 0; s < schools; s++) {
-      schoolOrbits.push({
-        center: centers[s],
-        orbitRadius: 8 + rand() * 3, // 8-11, wider to cross frame
-        orbitAngle: rand() * Math.PI * 2,
-        orbitSpeed: 0.004 + rand() * 0.006, // 0.004-0.01 rad/s
-      });
-    }
+    const schoolTravel = lanes.map(l => ({
+      startX: l.startX,
+      y: l.y,
+      z: l.z,
+      dir: 1,          // all +X
+      speed: l.speed,
+    }));
 
     const data: Array<{
       schoolIndex: number;
       offset: THREE.Vector3;
+      driftPhaseY: number;
+      driftPhaseZ: number;
       headingOffset: number;
       wobblePhase: number;
-      wobbleSpeed: number;
     }> = [];
 
     for (let i = 0; i < count; i++) {
       const si = Math.floor(i / perSchool);
+      // Wider spread: x +-5, y +-1.8, z +-2
       const offset = new THREE.Vector3(
-        (rand() - 0.5) * 3, // ~1.5 units spread
-        (rand() - 0.5) * 2,
-        (rand() - 0.5) * 3
+        (rand() - 0.5) * 10,
+        (rand() - 0.5) * 3.6,
+        (rand() - 0.5) * 4
       );
-      const headingOffset = (rand() - 0.5) * 0.2; // tiny heading variation
+      const driftPhaseY = rand() * Math.PI * 2;
+      const driftPhaseZ = rand() * Math.PI * 2;
+      const headingOffset = (rand() - 0.5) * 0.2; // at most 0.1 rad
       const wobblePhase = rand() * Math.PI * 2;
-      const wobbleSpeed = 1.5 + rand() * 1; // ~1.5-2.5 rad/s (4x slower, capped well under 6)
       const color = FISH_COLORS[Math.floor(rand() * FISH_COLORS.length)];
 
-      data.push({ schoolIndex: si, offset, headingOffset, wobblePhase, wobbleSpeed });
+      data.push({ schoolIndex: si, offset, driftPhaseY, driftPhaseZ, headingOffset, wobblePhase });
 
-      // Initial position will be set in useFrame first frame
       _m4.current.identity();
       mesh.setMatrixAt(i, _m4.current);
       mesh.setColorAt(i, new THREE.Color(color));
@@ -134,7 +131,7 @@ export function ReefFish({
     mesh.instanceColor!.needsUpdate = true;
 
     scene.add(mesh);
-    return { mesh, data, schoolOrbits, geo, mat, cleanup: () => { scene.remove(mesh); geo.dispose(); mat.dispose(); } };
+    return { mesh, data, schoolTravel, geo, mat, cleanup: () => { scene.remove(mesh); geo.dispose(); mat.dispose(); } };
   }, [scene]);
 
   useFrame((state) => {
@@ -149,35 +146,43 @@ export function ReefFish({
 
     fish.mat.opacity = 0.9 * opacity;
 
-    // Update school orbit positions
-    for (let s = 0; s < fish.schoolOrbits.length; s++) {
-      const so = fish.schoolOrbits[s];
-      so.orbitAngle += elapsed * so.orbitSpeed;
-      so.center.x = so.center.x + Math.cos(so.orbitAngle) * so.orbitRadius;
-      so.center.z = so.center.z + Math.sin(so.orbitAngle) * so.orbitRadius;
-    }
-
     for (let i = 0; i < fish.data.length; i++) {
       const d = fish.data[i];
-      const so = fish.schoolOrbits[d.schoolIndex];
+      const st = fish.schoolTravel[d.schoolIndex];
 
-      // School center position on orbit
-      const schoolX = so.center.x + Math.cos(so.orbitAngle) * so.orbitRadius;
-      const schoolZ = so.center.z + Math.sin(so.orbitAngle) * so.orbitRadius;
-      const schoolY = so.center.y;
+      // School position from elapsed time: x = startX + speed * elapsed, wrapped at +-30
+      const traveled = st.speed * elapsed;
+      let schoolX = st.startX + traveled;
+      // Wrap within -30..+30
+      schoolX = ((schoolX - X_MIN) % X_RANGE + X_RANGE) % X_RANGE + X_MIN;
 
-      // Fish position: school center + small offset
+      // Fade scale near wrap edges (last 3 units)
+      let scaleFactor = 1;
+      if (schoolX > X_MAX - WRAP_FADE) {
+        scaleFactor = (X_MAX - schoolX) / WRAP_FADE;
+      } else if (schoolX < X_MIN + WRAP_FADE) {
+        scaleFactor = (schoolX - X_MIN) / WRAP_FADE;
+      }
+
+      const schoolY = st.y;
+      const schoolZ = st.z;
+
+      // Fish position: school center + fixed offset + slow drift on y/z
       const pos = new THREE.Vector3(
         schoolX + d.offset.x,
-        schoolY + d.offset.y,
-        schoolZ + d.offset.z
+        schoolY + d.offset.y + Math.sin(elapsed * 0.3 + d.driftPhaseY) * 0.6,
+        schoolZ + d.offset.z + Math.sin(elapsed * 0.3 + d.driftPhaseZ) * 0.6
       );
 
-      // Heading: tangent to orbit + tiny variation
-      const heading = so.orbitAngle + Math.PI / 2 + d.headingOffset;
-      const wobble = Math.sin(elapsed * d.wobbleSpeed + d.wobblePhase) * 0.3; // increased to 0.3 rad
+      // Heading: all swim +X (0 rad) with tiny variation
+      const heading = d.headingOffset; // base 0
+
+      // Tail wobble: sin(t * 5 + phase) * 0.25 rad
+      const wobble = Math.sin(elapsed * 5 + d.wobblePhase) * 0.25;
 
       _m4.current.makeRotationFromEuler(new THREE.Euler(0, heading, wobble));
+      _scaleVec.current.set(scaleFactor, scaleFactor, scaleFactor);
+      _m4.current.scale(_scaleVec.current);
       _m4.current.setPosition(pos);
       fish.mesh.setMatrixAt(i, _m4.current);
     }

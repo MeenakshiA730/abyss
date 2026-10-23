@@ -33,9 +33,11 @@ function getSeaPlantsOpacity(zone: ZoneId, zoneProgress: number): number {
   return 0;
 }
 
-const BLADE_COLORS = [0x2d7a2d, 0x3a9d3a, 0x1e5c1e, 0x4ab84a, 0x257025] as const;
-const COUNT = 60;
-const SPREAD = 35;
+const EDGE_COLOR = 0x1f7a4a;
+const INNER_COLOR = 0x3ddc84;
+const COUNT = 110;
+const CLUMP_SIZE_MIN = 8;
+const CLUMP_SIZE_MAX = 12;
 
 export function SeaPlants({
   zone,
@@ -53,16 +55,65 @@ export function SeaPlants({
     const rand = createSeededRandom(0x5ea1);
     const count = COUNT;
 
-    // Tapered blade geometry: plane with vertex scaling for taper
-    const geo = new THREE.PlaneGeometry(1, 4, 1, 8);
+    // Build clumps: each clump has 8-12 blades, placed on left/right sides
+    const clumps: Array<{
+      centerX: number;
+      centerZ: number;
+      bladeCount: number;
+      baseY: number;
+      swayPhase: number;
+      blades: Array<{
+        offsetX: number;
+        offsetZ: number;
+        height: number;
+        color: number;
+        phaseOffset: number;
+      }>;
+    }> = [];
+
+    let remaining = count;
+    while (remaining > 0) {
+      const bladeCount = Math.min(CLUMP_SIZE_MIN + Math.floor(rand() * (CLUMP_SIZE_MAX - CLUMP_SIZE_MIN + 1)), remaining);
+      const side = rand() < 0.5 ? -1 : 1;
+      const centerX = side * (9 + rand() * 19); // |x| between 9 and 28
+      const centerZ = -8 - rand() * 12; // z -8 to -20
+      const baseY = -7 + (rand() - 0.5) * 0.5; // base at ~-7
+      const clumpSwayPhase = rand() * Math.PI * 2;
+
+      const blades: Array<{
+        offsetX: number;
+        offsetZ: number;
+        height: number;
+        color: number;
+        phaseOffset: number;
+      }> = [];
+
+      for (let b = 0; b < bladeCount; b++) {
+        const angle = rand() * Math.PI * 2;
+        const radius = 0.3 + rand() * 0.5; // tight clump
+        blades.push({
+          offsetX: Math.cos(angle) * radius,
+          offsetZ: Math.sin(angle) * radius,
+          height: 3 + rand() * 2, // 3 to 5
+          color: rand() < 0.5 ? EDGE_COLOR : INNER_COLOR,
+          phaseOffset: rand() * Math.PI * 0.5, // slight per-blade variation
+        });
+      }
+
+      clumps.push({ centerX, centerZ, bladeCount, baseY, swayPhase: clumpSwayPhase, blades });
+      remaining -= bladeCount;
+    }
+
+    // Tapered blade geometry: thin plane with vertex scaling for taper
+    const geo = new THREE.PlaneGeometry(0.12, 1, 1, 8); // width 0.12, height 1 (scaled per instance)
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i);
-      const normalized = (y + 2) / 4; // 0 at base, 1 at tip
-      const taper = 1 - normalized * 0.7; // 1.0 at base, 0.3 at tip
+      const normalized = (y + 0.5); // 0 at base, 1 at tip
+      const taper = 1 - normalized * 0.6; // 1.0 at base, 0.4 at tip
       pos.setX(i, pos.getX(i) * taper);
     }
-    geo.translate(0, 2, 0); // pivot at base
+    geo.translate(0, 0.5, 0); // pivot at base
 
     const mat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
@@ -78,24 +129,31 @@ export function SeaPlants({
 
     const data: Array<{
       position: THREE.Vector3;
+      height: number;
       swayPhase: number;
       color: number;
     }> = [];
 
-    for (let i = 0; i < count; i++) {
-      const position = new THREE.Vector3(
-        (rand() - 0.5) * SPREAD * 2,
-        0,
-        (rand() - 0.5) * SPREAD * 2
-      );
-      const swayPhase = rand() * Math.PI * 2;
-      const color = BLADE_COLORS[Math.floor(rand() * BLADE_COLORS.length)];
+    let idx = 0;
+    for (const clump of clumps) {
+      for (const blade of clump.blades) {
+        const position = new THREE.Vector3(
+          clump.centerX + blade.offsetX,
+          clump.baseY,
+          clump.centerZ + blade.offsetZ
+        );
+        data.push({
+          position,
+          height: blade.height,
+          swayPhase: clump.swayPhase + blade.phaseOffset,
+          color: blade.color,
+        });
 
-      data.push({ position, swayPhase, color });
-
-      _m4.current.identity();
-      mesh.setMatrixAt(i, _m4.current);
-      mesh.setColorAt(i, new THREE.Color(color));
+        _m4.current.identity();
+        mesh.setMatrixAt(idx, _m4.current);
+        mesh.setColorAt(idx, new THREE.Color(blade.color));
+        idx++;
+      }
     }
     mesh.instanceMatrix.needsUpdate = true;
     mesh.instanceColor!.needsUpdate = true;
@@ -120,10 +178,10 @@ export function SeaPlants({
       const d = plants.data[i];
 
       _m4.current.identity();
-      // Sway: Z rotation = sin(t * 0.9 + phase) * 0.12
-      const sway = Math.sin(elapsed * 0.9 + d.swayPhase) * 0.12;
+      // Sway: Z rotation = sin(t * 0.5 + phase) * 0.08 (slow, small)
+      const sway = Math.sin(elapsed * 0.5 + d.swayPhase) * 0.08;
       _m4.current.makeRotationZ(sway);
-      _scaleVec.current.set(1, 1, 1);
+      _scaleVec.current.set(1, d.height, 1); // scale Y for height
       _m4.current.scale(_scaleVec.current);
       _m4.current.setPosition(d.position);
       plants.mesh.setMatrixAt(i, _m4.current);

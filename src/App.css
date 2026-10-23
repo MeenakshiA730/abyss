@@ -248,6 +248,23 @@
 }
 
 /* ============================================
+   SIGNAL PILL
+   ============================================ */
+
+.signal-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ============================================
    HERO SECTION
    ============================================ */
 

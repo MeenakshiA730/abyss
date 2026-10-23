@@ -116,6 +116,33 @@ const formatSignal = (depth: number): string => {
   return 'CRITICAL';
 };
 
+function SignalPill({ depth, reducedMotion }: { depth: number; reducedMotion: boolean }) {
+  const signal = formatSignal(depth);
+  const signalColors: Record<string, { bg: string; text: string }> = {
+    STRONG: { bg: 'rgba(0, 255, 191, 0.15)', text: '#00ffbf' },
+    GOOD: { bg: 'rgba(0, 212, 255, 0.15)', text: '#00d4ff' },
+    WEAK: { bg: 'rgba(204, 119, 0, 0.15)', text: '#cc7700' },
+    CRITICAL: { bg: 'rgba(204, 0, 0, 0.15)', text: '#ff4444' },
+  };
+  const colors = signalColors[signal] || signalColors.STRONG;
+
+  return (
+    <motion.span
+      className="signal-pill"
+      initial={{ opacity: 0, scale: 0.8 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={reducedMotion ? { duration: 0 } : { duration: 0.3, delay: 0.5 }}
+      style={{
+        background: colors.bg,
+        color: colors.text,
+        border: `1px solid ${colors.text}40`,
+      } as React.CSSProperties}
+    >
+      {signal}
+    </motion.span>
+  );
+}
+
 // ============================================
 // UI Components
 // ============================================
@@ -1203,6 +1230,7 @@ function AppInner() {
             />
           </div>
           <div className="top-right">
+            <SignalPill depth={depth} reducedMotion={reducedMotion} />
             <AudioToggle />
           </div>
         </header>

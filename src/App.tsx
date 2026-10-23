@@ -184,9 +184,11 @@ function ZoneNavigation({
 }
 
 function HeroTitle({
-  scrollProgress
+  scrollProgress,
+  scrollY = 0
 }: {
   scrollProgress: number;
+  scrollY?: number;
 }) {
   const progressValue = useMotionValue(scrollProgress);
   const titleOpacity = useTransform(progressValue, [0, 0.15, 0.3], [1, 1, 0]);
@@ -198,6 +200,9 @@ function HeroTitle({
   useEffect(() => {
     progressValue.set(scrollProgress);
   }, [scrollProgress, progressValue]);
+
+  // Unmount hero title once scrollY > 50
+  if (scrollY > 50) return null;
 
   return (
     <div className="hero-content">
@@ -1092,6 +1097,7 @@ export default function App() {
 function AppInner() {
   const {
     scrollProgress,
+    scrollY,
     depth,
     currentZone,
     zoneProgress
@@ -1202,10 +1208,9 @@ function AppInner() {
         </header>
 
         <main className="hero-section">
-          <HeroTitle scrollProgress={scrollProgress} />
+          <HeroTitle scrollProgress={scrollProgress} scrollY={scrollY} />
 
           <div className="hero-bottom">
-            <Coordinates depth={depth} />
             <DescendButton
               onClick={() => scrollToZone('twilight')}
               scrollProgress={scrollProgress}
@@ -1214,6 +1219,11 @@ function AppInner() {
             <ScrollIndicator reducedMotion={reducedMotion} />
           </div>
         </main>
+
+        {/* Coordinates card - fixed position bottom right */}
+        <div style={{ position: 'fixed', right: 24, bottom: 24, width: 220 }} aria-label="Expedition coordinates">
+          <Coordinates depth={depth} />
+        </div>
 
         <ZoneTitleOverlay
           currentZone={currentZone}

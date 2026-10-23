@@ -15,6 +15,7 @@ import { Particles } from './Particles';
 import { MassiveCreature } from './MassiveCreature';
 import { MarineLife } from './MarineLife';
 import { GlowLife } from './GlowLife';
+import { ReefFish } from './ReefFish';
 import { Terrain } from './Terrain';
 import { Shipwreck } from './Shipwreck';
 import { ResearchStation } from './ResearchStation';
@@ -223,6 +224,16 @@ export function AbyssCanvas({
         {/* ============ GLOW LIFE - Bioluminescent deep sea creatures ============ */}
         {/* Jellyfish, anglerfish, glowing plankton - additive blending, follows descent */}
         <GlowLife
+          zone={currentZone}
+          zoneProgress={zoneProgress}
+          reducedMotion={reducedMotion}
+          isPaused={isPaused}
+          depth={depth}
+        />
+
+        {/* ============ REEF FISH - Sunlight zone schooling fish ============ */}
+        {/* InstancedMesh, 60 fish, 3 schools, cone geometry, per-instance colors */}
+        <ReefFish
           zone={currentZone}
           zoneProgress={zoneProgress}
           reducedMotion={reducedMotion}
